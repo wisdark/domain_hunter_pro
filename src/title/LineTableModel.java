@@ -55,7 +55,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 	PrintWriter stderr;
 
 	private static final String[] standardTitles = new String[] {
-			"#", "URL", "Status", "Length", "Title","Comments","isChecked","Level","Time","IP", "CDN|CertInfo","Server"};
+			"#", "URL", "Status", "Length", "Title","Comments","Server","isChecked","Level","Time","IP", "CDN|CertInfo"};
 	private static List<String> titletList = new ArrayList<>(Arrays.asList(standardTitles));
 	//为了实现动态表结构
 	public static List<String> getTitletList() {
@@ -65,7 +65,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 
 	public LineTableModel(){
 
-		titletList.remove("Server");
+		//titletList.remove("Server");
 		//titletList.remove("Time");
 		try{
 			stdout = new PrintWriter(BurpExtender.getCallbacks().getStdout(), true);
@@ -406,6 +406,20 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
 				String host = lineEntries.getValueAtIndex(rows[i]).getHost();
 				hosts.add(host);
+			}
+			return hosts;
+		}
+	}
+	
+	public List<String> getHostsAndPorts(int[] rows) {
+		synchronized (lineEntries) {
+			Arrays.sort(rows); //升序
+			List<String> hosts = new ArrayList<>();
+
+			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
+				LineEntry line = lineEntries.getValueAtIndex(rows[i]);
+				String hostAndPort = line.getHost()+":"+line.getPort();
+				hosts.add(hostAndPort);
 			}
 			return hosts;
 		}

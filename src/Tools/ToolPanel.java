@@ -23,6 +23,7 @@ import java.util.Base64;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -38,6 +39,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.SwingWorker;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import javax.swing.event.DocumentEvent;
@@ -48,6 +50,7 @@ import org.apache.commons.text.StringEscapeUtils;
 
 import burp.BurpExtender;
 import burp.Commons;
+import domain.CertInfo;
 
 /*
  * 所有配置的修改，界面的操作，都立即写入LineConfig对象，如有必要保存到磁盘，再调用一次SaveConfig函数，思路要清晰
@@ -79,14 +82,14 @@ public class ToolPanel extends JPanel {
 	private JTextField textFieldDirSearch;
 	public static JTextField textFieldDirBruteDict;
 	private JTextField textFieldPython;
-	
+
 
 	public static LineConfig getLineConfig() {
 		return lineConfig;
 	}
 
 	//加载： 磁盘文件-->LineConfig对象--->具体控件的值
-	public void loadConfig() {
+	public void loadConfigToGUI() {
 		String content = BurpExtender.getCallbacks().loadExtensionSetting(BurpExtender.Extension_Setting_Name_Line_Config);
 		if (content == null) {
 			lineConfig = new LineConfig();
@@ -102,12 +105,37 @@ public class ToolPanel extends JPanel {
 		showItemsInOne.setSelected(lineConfig.isShowItemsInOne());
 	}
 
+
+	public void saveToConfigFromGUI() {
+		File browser = new File(BrowserPath.getText().trim());
+		File portScanner = new File(textFieldPortScanner.getText().trim());
+		File python3 = new File(textFieldPython.getText().trim());
+		File dirSearch = new File(textFieldDirSearch.getText().trim());
+		File bruteDict = new File(textFieldDirBruteDict.getText().trim());
+		if (browser.exists()) {
+			lineConfig.setBrowserPath(browser.getAbsolutePath());
+		}
+		if (portScanner.exists()) {
+			lineConfig.setNmapPath(portScanner.getAbsolutePath());
+		}
+		if (dirSearch.exists()) {
+			lineConfig.setDirSearchPath(dirSearch.getAbsolutePath());
+		}
+		if (bruteDict.exists()) {
+			lineConfig.setBruteDict(bruteDict.getAbsolutePath());
+		}
+		if (python3.exists()) {
+			lineConfig.setPython3Path(python3.getAbsolutePath());
+		}
+		lineConfig.setToolPanelText(inputTextArea.getText());
+		lineConfig.setShowItemsInOne(showItemsInOne.isSelected());
+	}
+
 	//要不要主动获取一下所有控件的值呢？
 	//还是说LineConfig的更新全靠控件的监听器
 	//保存： 具体各个控件的值---->LineConfig对象---->磁盘文件
-	public void saveConfig() {
-		lineConfig.setToolPanelText(inputTextArea.getText());
-		lineConfig.setShowItemsInOne(showItemsInOne.isSelected());
+	public void saveConfigToDisk() {
+		saveToConfigFromGUI();
 		String config = lineConfig.ToJson();
 		BurpExtender.getCallbacks().saveExtensionSetting(BurpExtender.Extension_Setting_Name_Line_Config, config);
 	}
@@ -202,10 +230,10 @@ public class ToolPanel extends JPanel {
 			@Override
 			public void actionPerformed(ActionEvent e) {
 				String content = inputTextArea.getText();
-				BurpExtender.grepDomains(content);
+				BurpExtender.liveAnalysisTread.classifyDomains(content);
 			}
 		});
-		
+
 		JButton btnOpenurls = new JButton("OpenURLs");
 		threeFourthPanel.add(btnOpenurls);
 		btnOpenurls.addActionListener(new ActionListener() {
@@ -232,6 +260,40 @@ public class ToolPanel extends JPanel {
 				}
 			}
 
+		});
+
+		JButton btnCertTime = new JButton("GetCertTime");
+		btnCertTime.setToolTipText("get out-of-service time of Cert");
+		threeFourthPanel.add(btnCertTime);
+		btnCertTime.addActionListener(new ActionListener() {
+			List<String> urls = new ArrayList<>();
+			ArrayList<String> result = new ArrayList<String>();
+
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				SwingWorker<Map, Map> worker = new SwingWorker<Map, Map>() {
+					//using SwingWorker to prevent blocking burp main UI.
+					@Override
+					protected Map doInBackground() throws Exception {
+						urls = Arrays.asList(lineConfig.getToolPanelText().replaceAll(" ","").replaceAll("\r\n", "\n").split("\n"));
+						Iterator<String> it = urls.iterator();
+						while(it.hasNext()) {
+							String url = it.next();
+							String time = CertInfo.getCertTime(url);
+							result.add(url+" "+time);
+							System.out.println(url+" "+time);
+						}
+						outputTextArea.setText(String.join(System.lineSeparator(), result));
+						return null;
+					}
+					@Override
+					protected void done() {
+						btnCertTime.setEnabled(true);
+						stdout.println("~~~~~~~~~~~~~Search Done~~~~~~~~~~~~~");
+					}
+				};
+				worker.execute();
+			}
 		});
 
 		JButton rows2List = new JButton("Rows To List");
@@ -521,7 +583,7 @@ public class ToolPanel extends JPanel {
 
 		JButton unescapeHTML = new JButton("UnescapeHTML");
 		threeFourthPanel.add(unescapeHTML);
-		
+
 		JButton Base64ToFile = new JButton("Base64ToFile");
 		threeFourthPanel.add(Base64ToFile);
 		Base64ToFile.addActionListener(new ActionListener() {
@@ -538,7 +600,7 @@ public class ToolPanel extends JPanel {
 					e1.printStackTrace(stderr);
 				}
 			}
-			
+
 			public File saveDialog() {
 				try {
 					JFileChooser fc =  new JFileChooser();
@@ -563,7 +625,7 @@ public class ToolPanel extends JPanel {
 				}
 			}
 		});
-		
+
 		JButton splitButton = new JButton("Split");
 		threeFourthPanel.add(splitButton);
 		splitButton.addActionListener(new ActionListener() {
@@ -577,7 +639,7 @@ public class ToolPanel extends JPanel {
 				}
 			}
 		});
-		
+
 		JButton combineButton = new JButton("Combine");
 		threeFourthPanel.add(combineButton);
 		combineButton.addActionListener(new ActionListener() {
@@ -595,9 +657,9 @@ public class ToolPanel extends JPanel {
 		RightOfCenter.setRightComponent(fourFourthPanel);
 		GridBagLayout gbl_fourFourthPanel = new GridBagLayout();
 		gbl_fourFourthPanel.columnWidths = new int[]{215, 215, 0};
-		gbl_fourFourthPanel.rowHeights = new int[]{27, 0, 0, 0, 27, 0, 27, 27, 27, 27, 0, 0, 0};
+		gbl_fourFourthPanel.rowHeights = new int[]{27, 0, 0, 0, 27, 0, 0, 27, 27, 27, 27, 0, 0, 0};
 		gbl_fourFourthPanel.columnWeights = new double[]{0.0, 1.0, Double.MIN_VALUE};
-		gbl_fourFourthPanel.rowWeights = new double[]{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Double.MIN_VALUE};
+		gbl_fourFourthPanel.rowWeights = new double[]{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, Double.MIN_VALUE};
 		fourFourthPanel.setLayout(gbl_fourFourthPanel);
 
 		JLabel lblNewLabel = new JLabel("Browser Path:");
@@ -616,7 +678,7 @@ public class ToolPanel extends JPanel {
 		fourFourthPanel.add(BrowserPath, gbc_BrowserPath);
 		BrowserPath.setColumns(50);
 		BrowserPath.getDocument().addDocumentListener(new textFieldListener());
-		
+
 		JLabel lblPortScanner = new JLabel("PortScanner Path:");
 		GridBagConstraints gbc_lblPortScanner = new GridBagConstraints();
 		gbc_lblPortScanner.anchor = GridBagConstraints.WEST;
@@ -624,7 +686,7 @@ public class ToolPanel extends JPanel {
 		gbc_lblPortScanner.gridx = 0;
 		gbc_lblPortScanner.gridy = 1;
 		fourFourthPanel.add(lblPortScanner, gbc_lblPortScanner);
-		
+
 		textFieldPortScanner = new JTextField();
 		textFieldPortScanner.setColumns(50);
 		textFieldPortScanner.getDocument().addDocumentListener(new textFieldListener());
@@ -634,7 +696,7 @@ public class ToolPanel extends JPanel {
 		gbc_textFieldPortScanner.gridx = 1;
 		gbc_textFieldPortScanner.gridy = 1;
 		fourFourthPanel.add(textFieldPortScanner, gbc_textFieldPortScanner);
-		
+
 		JLabel lblPythonPath = new JLabel("Python3 Path:");
 		GridBagConstraints gbc_lblPythonPath = new GridBagConstraints();
 		gbc_lblPythonPath.anchor = GridBagConstraints.WEST;
@@ -642,7 +704,7 @@ public class ToolPanel extends JPanel {
 		gbc_lblPythonPath.gridx = 0;
 		gbc_lblPythonPath.gridy = 2;
 		fourFourthPanel.add(lblPythonPath, gbc_lblPythonPath);
-		
+
 		textFieldPython = new JTextField();
 		textFieldPython.setColumns(50);
 		GridBagConstraints gbc_textFieldPython = new GridBagConstraints();
@@ -651,7 +713,7 @@ public class ToolPanel extends JPanel {
 		gbc_textFieldPython.gridx = 1;
 		gbc_textFieldPython.gridy = 2;
 		fourFourthPanel.add(textFieldPython, gbc_textFieldPython);
-		
+
 		JLabel lblDirSearch = new JLabel("DirSearch Path:");
 		GridBagConstraints gbc_lblDirSearch = new GridBagConstraints();
 		gbc_lblDirSearch.anchor = GridBagConstraints.WEST;
@@ -659,7 +721,7 @@ public class ToolPanel extends JPanel {
 		gbc_lblDirSearch.gridx = 0;
 		gbc_lblDirSearch.gridy = 3;
 		fourFourthPanel.add(lblDirSearch, gbc_lblDirSearch);
-		
+
 		textFieldDirSearch = new JTextField();
 		textFieldDirSearch.setColumns(50);
 		textFieldDirSearch.getDocument().addDocumentListener(new textFieldListener());
@@ -687,7 +749,7 @@ public class ToolPanel extends JPanel {
 		fourFourthPanel.add(PortList, gbc_PortList);
 		PortList.setColumns(50);
 		PortList.setToolTipText("eg.: 8080,8088");
-		
+
 		JLabel lblDirBruteDict = new JLabel("Dir Brute Dict:");
 		GridBagConstraints gbc_lblDirBruteDict = new GridBagConstraints();
 		gbc_lblDirBruteDict.anchor = GridBagConstraints.WEST;
@@ -695,7 +757,7 @@ public class ToolPanel extends JPanel {
 		gbc_lblDirBruteDict.gridx = 0;
 		gbc_lblDirBruteDict.gridy = 5;
 		fourFourthPanel.add(lblDirBruteDict, gbc_lblDirBruteDict);
-		
+
 		textFieldDirBruteDict = new JTextField();
 		textFieldDirBruteDict.setToolTipText("path of dict");
 		textFieldDirBruteDict.setColumns(50);
@@ -712,7 +774,7 @@ public class ToolPanel extends JPanel {
 		gbc_label_1.fill = GridBagConstraints.BOTH;
 		gbc_label_1.insets = new Insets(0, 0, 5, 5);
 		gbc_label_1.gridx = 0;
-		gbc_label_1.gridy = 6;
+		gbc_label_1.gridy = 7;
 		fourFourthPanel.add(label_1, gbc_label_1);
 
 
@@ -721,7 +783,7 @@ public class ToolPanel extends JPanel {
 		gbc_showItemsInOne.fill = GridBagConstraints.BOTH;
 		gbc_showItemsInOne.insets = new Insets(0, 0, 5, 0);
 		gbc_showItemsInOne.gridx = 1;
-		gbc_showItemsInOne.gridy = 6;
+		gbc_showItemsInOne.gridy = 7;
 		fourFourthPanel.add(showItemsInOne, gbc_showItemsInOne);
 		showItemsInOne.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
@@ -734,7 +796,7 @@ public class ToolPanel extends JPanel {
 		gbc_label_2.fill = GridBagConstraints.BOTH;
 		gbc_label_2.insets = new Insets(0, 0, 5, 5);
 		gbc_label_2.gridx = 0;
-		gbc_label_2.gridy = 7;
+		gbc_label_2.gridy = 8;
 		fourFourthPanel.add(label_2, gbc_label_2);
 
 		ignoreHTTPS = new JRadioButton("Ignore HTTPS if HTTP is OK || Ignore HTTP if HTTPS is OK");
@@ -742,7 +804,7 @@ public class ToolPanel extends JPanel {
 		gbc_ignoreHTTPS.fill = GridBagConstraints.BOTH;
 		gbc_ignoreHTTPS.insets = new Insets(0, 0, 5, 0);
 		gbc_ignoreHTTPS.gridx = 1;
-		gbc_ignoreHTTPS.gridy = 7;
+		gbc_ignoreHTTPS.gridy = 8;
 		fourFourthPanel.add(ignoreHTTPS, gbc_ignoreHTTPS);
 		ignoreHTTPS.setSelected(true);
 
@@ -751,7 +813,7 @@ public class ToolPanel extends JPanel {
 		gbc_label_3.fill = GridBagConstraints.BOTH;
 		gbc_label_3.insets = new Insets(0, 0, 5, 5);
 		gbc_label_3.gridx = 0;
-		gbc_label_3.gridy = 8;
+		gbc_label_3.gridy = 9;
 		fourFourthPanel.add(label_3, gbc_label_3);
 
 		ignoreHTTPStaus500 = new JRadioButton("Ignore items which Status >= 500");
@@ -759,7 +821,7 @@ public class ToolPanel extends JPanel {
 		gbc_ignoreHTTPStaus500.fill = GridBagConstraints.BOTH;
 		gbc_ignoreHTTPStaus500.insets = new Insets(0, 0, 5, 0);
 		gbc_ignoreHTTPStaus500.gridx = 1;
-		gbc_ignoreHTTPStaus500.gridy = 8;
+		gbc_ignoreHTTPStaus500.gridy = 9;
 		fourFourthPanel.add(ignoreHTTPStaus500, gbc_ignoreHTTPStaus500);
 		ignoreHTTPStaus500.setSelected(true);
 
@@ -768,7 +830,7 @@ public class ToolPanel extends JPanel {
 		gbc_label_4.fill = GridBagConstraints.BOTH;
 		gbc_label_4.insets = new Insets(0, 0, 5, 5);
 		gbc_label_4.gridx = 0;
-		gbc_label_4.gridy = 9;
+		gbc_label_4.gridy = 10;
 		fourFourthPanel.add(label_4, gbc_label_4);
 
 		ignoreHTTPStaus400 = new JRadioButton("Ignore http Status 400(The plain HTTP request was sent to HTTPS port)");
@@ -776,39 +838,39 @@ public class ToolPanel extends JPanel {
 		gbc_ignoreHTTPStaus400.insets = new Insets(0, 0, 5, 0);
 		gbc_ignoreHTTPStaus400.fill = GridBagConstraints.BOTH;
 		gbc_ignoreHTTPStaus400.gridx = 1;
-		gbc_ignoreHTTPStaus400.gridy = 9;
+		gbc_ignoreHTTPStaus400.gridy = 10;
 		fourFourthPanel.add(ignoreHTTPStaus400, gbc_ignoreHTTPStaus400);
 		ignoreHTTPStaus400.setSelected(true);
-		
+
 		JLabel label_5 = new JLabel("");
 		GridBagConstraints gbc_label_5 = new GridBagConstraints();
 		gbc_label_5.insets = new Insets(0, 0, 5, 5);
 		gbc_label_5.gridx = 0;
-		gbc_label_5.gridy = 10;
+		gbc_label_5.gridy = 11;
 		fourFourthPanel.add(label_5, gbc_label_5);
-		
+
 		ignoreWrongCAHost = new JRadioButton("Ignore Host that is IP Address and Certificate authority not match");
 		ignoreWrongCAHost.setSelected(false);
 		GridBagConstraints gbc_ignoreWrongCAHost = new GridBagConstraints();
 		gbc_ignoreWrongCAHost.insets = new Insets(0, 0, 5, 0);
 		gbc_ignoreWrongCAHost.fill = GridBagConstraints.BOTH;
 		gbc_ignoreWrongCAHost.gridx = 1;
-		gbc_ignoreWrongCAHost.gridy = 10;
+		gbc_ignoreWrongCAHost.gridy = 11;
 		fourFourthPanel.add(ignoreWrongCAHost, gbc_ignoreWrongCAHost);
-		
+
 		JLabel label_6 = new JLabel("");
 		GridBagConstraints gbc_label_6 = new GridBagConstraints();
 		gbc_label_6.insets = new Insets(0, 0, 0, 5);
 		gbc_label_6.gridx = 0;
-		gbc_label_6.gridy = 11;
+		gbc_label_6.gridy = 12;
 		fourFourthPanel.add(label_6, gbc_label_6);
-		
+
 		DisplayContextMenuOfBurp = new JRadioButton("Display Context Menu Of Burp");
 		DisplayContextMenuOfBurp.setSelected(true);
 		GridBagConstraints gbc_DisplayContextMenuOfBurp = new GridBagConstraints();
 		gbc_DisplayContextMenuOfBurp.fill = GridBagConstraints.BOTH;
 		gbc_DisplayContextMenuOfBurp.gridx = 1;
-		gbc_DisplayContextMenuOfBurp.gridy = 11;
+		gbc_DisplayContextMenuOfBurp.gridy = 12;
 		fourFourthPanel.add(DisplayContextMenuOfBurp, gbc_DisplayContextMenuOfBurp);
 
 		///////////////////////////FooterPanel//////////////////
@@ -895,43 +957,20 @@ public class ToolPanel extends JPanel {
 
 	//保存各个路径设置参数，自动保存的listener
 	class textFieldListener implements DocumentListener {
-		
-		public void save() {
-			File browser = new File(BrowserPath.getText().trim());
-			File portScanner = new File(textFieldPortScanner.getText().trim());
-			File python3 = new File(textFieldPython.getText().trim());
-			File dirSearch = new File(textFieldDirSearch.getText().trim());
-			File bruteDict = new File(textFieldDirBruteDict.getText().trim());
-			if (browser.exists()) {
-				lineConfig.setBrowserPath(browser.getAbsolutePath());
-			}
-			if (portScanner.exists()) {
-				lineConfig.setNmapPath(portScanner.getAbsolutePath());
-			}
-			if (dirSearch.exists()) {
-				lineConfig.setDirSearchPath(dirSearch.getAbsolutePath());
-			}
-			if (bruteDict.exists()) {
-				lineConfig.setBruteDict(bruteDict.getAbsolutePath());
-			}
-			if (python3.exists()) {
-				lineConfig.setPython3Path(python3.getAbsolutePath());
-			}
-		}
 
 		@Override
 		public void removeUpdate(DocumentEvent e) {
-			save();
+			saveToConfigFromGUI();
 		}
 
 		@Override
 		public void insertUpdate(DocumentEvent e) {
-			save();
+			saveToConfigFromGUI();
 		}
 
 		@Override
 		public void changedUpdate(DocumentEvent arg0) {
-			save();
+			saveToConfigFromGUI();
 		}
 	}
 }

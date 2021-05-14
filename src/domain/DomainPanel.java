@@ -142,6 +142,7 @@ public class DomainPanel extends JPanel {
 
 
 		JButton btnSaveDomainOnly = new JButton("SaveDomainOnly");
+		btnSaveDomainOnly.setToolTipText("Only save data in Domain Panel");
 		btnSaveDomainOnly.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				saveDomainOnly();
@@ -280,6 +281,7 @@ public class DomainPanel extends JPanel {
 
 
 		JButton btnZoneTransferCheck = new JButton("AXFR");
+		btnZoneTransferCheck.setToolTipText("Zone Transfer Check");
 		btnZoneTransferCheck.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 
@@ -362,32 +364,6 @@ public class DomainPanel extends JPanel {
 			}
 		});
 		HeaderPanel.add(btnBuckupDB);
-
-		JButton btnBgphenet = new JButton("bgp.he.net");
-		btnBgphenet.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				String url= "https://bgp.he.net/";
-				try {
-					Commons.browserOpen(url,null);
-				} catch (Exception e1) {
-					e1.printStackTrace(stderr);
-				}
-			}
-		});
-		HeaderPanel.add(btnBgphenet);
-
-		JButton btnIcp = new JButton("icp.chinaz.com");
-		btnIcp.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-				String url= "http://icp.chinaz.com/";
-				try {
-					Commons.browserOpen(url,null);
-				} catch (Exception e1) {
-					e1.printStackTrace(stderr);
-				}
-			}
-		});
-		HeaderPanel.add(btnIcp);
 
 		Component verticalStrut_1 = Box.createVerticalStrut(20);
 		HeaderPanel.add(verticalStrut_1);
@@ -662,6 +638,8 @@ public class DomainPanel extends JPanel {
 			@Override
 			public void actionPerformed(ActionEvent e) {
 				//to clear sub and similar domains
+				BurpExtender.QueueToResult();
+				domainResult.getEmailSet().addAll(collectEmails());
 				Set<String> tmpDomains = domainResult.getSubDomainSet();
 				Set<String> newSubDomainSet = new HashSet<>();
 				Set<String> newSimilarDomainSet = new HashSet<String>();
@@ -988,7 +966,7 @@ public class DomainPanel extends JPanel {
 				if (Records.size() > 0) {
 					try {
 						//stdout.println("!!! "+Server+" is zoneTransfer vulnerable for domain "+rootDomain+" !");
-						File file = new File(rootDomain+"-ZoneTransfer-"+Commons.getNowTimeString()+".txt");
+						File file = new File(Server+"-ZoneTransfer-"+Commons.getNowTimeString()+".txt");
 						file.createNewFile();
 						FileUtils.writeLines(file, Records);
 						stdout.println("!!! Records saved to "+file.getAbsolutePath());

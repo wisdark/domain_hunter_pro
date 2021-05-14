@@ -7,36 +7,21 @@ import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.awt.event.FocusAdapter;
-import java.awt.event.FocusEvent;
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
-import java.awt.event.MouseWheelEvent;
-import java.awt.event.MouseWheelListener;
 import java.io.PrintWriter;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import javax.swing.AbstractAction;
-import javax.swing.InputMap;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
 import javax.swing.JTextField;
-import javax.swing.KeyStroke;
-import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.border.EmptyBorder;
 
-import GUI.GUI;
-import Tools.LineConfig;
 import burp.BurpExtender;
 import burp.Commons;
 import burp.IPAddress;
@@ -52,7 +37,6 @@ public class TitlePanel extends JPanel {
 	private JPanel buttonPanel;
 	private static LineTable titleTable;
 	private JLabel lblSummaryOfTitle;
-	private static String cookie;
 	public static JRadioButton rdbtnUnCheckedItems;
 	public static JRadioButton rdbtnCheckingItems;
 	public static JRadioButton rdbtnCheckedItems;
@@ -62,8 +46,9 @@ public class TitlePanel extends JPanel {
 	PrintWriter stdout;
 	PrintWriter stderr;
 	public static ThreadGetTitleWithForceStop threadGetTitle;
+	public static GetTitleTempConfig tempConfig; //每次获取title过程中的配置。
 	private IndexedLinkedHashMap<String,LineEntry> BackupLineEntries;
-	
+
 	private static JTextField textFieldSearch;
 
 	public static JTextField getTextFieldSearch() {
@@ -163,7 +148,7 @@ public class TitlePanel extends JPanel {
 		});
 		buttonPanel.add(btnGettitle);
 
-		
+
 		JButton btnGetExtendtitle = new JButton("Get Extend Title");
 		btnGetExtendtitle.setToolTipText("Get title of the host that in same subnet,you should do this after get domain title done!");
 		btnGetExtendtitle.setEnabled(true);//default is false,only true after "get title" is done.
@@ -191,8 +176,8 @@ public class TitlePanel extends JPanel {
 			}
 		});
 		buttonPanel.add(btnGetExtendtitle);
-		
-		
+
+
 		JButton btnGettitleOfJustNewFound = new JButton("GetTitleOfNewDomain");
 		btnGettitleOfJustNewFound.setToolTipText("Just get title of new found subdomains");
 		btnGettitleOfJustNewFound.addActionListener(new ActionListener() {
@@ -219,7 +204,7 @@ public class TitlePanel extends JPanel {
 			}
 		});
 		buttonPanel.add(btnGettitleOfJustNewFound);
-		
+
 
 		JButton btnGetSubnet = new JButton("Get Subnet");
 		btnGetSubnet.setEnabled(true);
@@ -282,7 +267,7 @@ public class TitlePanel extends JPanel {
 		btnSaveState.setToolTipText("Save Data To DataBase");
 		//buttonPanel.add(btnSaveState);
 
-		
+
 		InputMap inputMap1 = btnSaveState.getInputMap(JButton.WHEN_IN_FOCUSED_WINDOW);
 		KeyStroke Save = KeyStroke.getKeyStroke(KeyEvent.VK_S,ActionEvent.CTRL_MASK); //Ctrl+S
 		inputMap1.put(Save, "Save");
@@ -306,8 +291,8 @@ public class TitlePanel extends JPanel {
 				worker.execute();
 			}
 		});
-		*/
-		
+		 */
+
 		JButton btnStop = new JButton("Stop");
 		btnStop.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
@@ -378,17 +363,9 @@ public class TitlePanel extends JPanel {
 	 * 根据所有已知域名获取title
 	 */
 	public void getAllTitle(){
-		//是否在目标的内网中
-		int user_input = JOptionPane.showConfirmDialog(null, "Do you want request [PRIVATE] ip addresses?","Chose work model",JOptionPane.YES_NO_OPTION);
-		if (JOptionPane.YES_OPTION == user_input) {
-			LineConfig.setPrivateNetworkWorkingModel(true);
-		}else {
-			LineConfig.setPrivateNetworkWorkingModel(false);
-		}
-
-		inputCookie();//如果用户点击cancel，就不会进行后续步骤，why?
-
+		tempConfig = new GetTitleTempConfig();
 		DomainPanel.backupDB();
+
 		Set<String> domains = new HashSet<>();//新建一个对象，直接赋值后的删除操作，实质是对domainResult的操作。
 		domains.addAll(DomainPanel.getDomainResult().getSubDomainSet());
 		//remove domains in black list
@@ -399,29 +376,26 @@ public class TitlePanel extends JPanel {
 		//clear tableModel
 
 		titleTableModel.clear(true);//clear
-
-		//获取额外端口逻辑
-		//		TitlePanel.externalPortList = Commons.Port_prompt(null,"External Ports To Run");
-		//		stdout.println("external ports: "+ externalPortList);
-
-//		threadGetTitle = new ThreadGetTitle(domains);
-//		threadGetTitle.Do();
 		if (threadGetTitle != null){
 			threadGetTitle.interrupt();
 		}
-		threadGetTitle = new ThreadGetTitleWithForceStop(domains);
-		threadGetTitle.start();
 
+		threadGetTitle = new ThreadGetTitleWithForceStop(domains,tempConfig.getThreadNumber());
+		threadGetTitle.start();
+		DomainPanel.getDomainResult().getNewAndNotGetTitleDomainSet().clear();
 	}
 
 
 	public void getExtendTitle(){
+		tempConfig = new GetTitleTempConfig();
+		DomainPanel.backupDB();
+
 		Set<String> extendIPSet = titleTableModel.GetExtendIPSet();
 		stdout.println(extendIPSet.size()+" extend IP Address founded"+extendIPSet);
 		if (threadGetTitle != null){
 			threadGetTitle.interrupt();
 		}
-		threadGetTitle = new ThreadGetTitleWithForceStop(extendIPSet);
+		threadGetTitle = new ThreadGetTitleWithForceStop(extendIPSet,tempConfig.getThreadNumber());
 		threadGetTitle.start();
 
 		//转移手动保存的结果
@@ -439,17 +413,10 @@ public class TitlePanel extends JPanel {
 	 * 获取新发现域名的title
 	 */
 	public void getTitleOfNewDomain(){
-		//是否在目标的内网中
-		int user_input = JOptionPane.showConfirmDialog(null, "Do you want request [PRIVATE] ip addresses?","Chose work model",JOptionPane.YES_NO_OPTION);
-		if (JOptionPane.YES_OPTION == user_input) {
-			LineConfig.setPrivateNetworkWorkingModel(true);
-		}else {
-			LineConfig.setPrivateNetworkWorkingModel(false);
-		}
 
-		inputCookie();//如果用户点击cancel，就不会进行后续步骤，why?
-
+		tempConfig = new GetTitleTempConfig();
 		DomainPanel.backupDB();
+
 		Set<String> domains = new HashSet<>();//新建一个对象，直接赋值后的删除操作，实质是对domainResult的操作。
 		domains.addAll(DomainPanel.getDomainResult().getNewAndNotGetTitleDomainSet());
 		//remove domains in black list
@@ -458,8 +425,9 @@ public class TitlePanel extends JPanel {
 		if (threadGetTitle != null){
 			threadGetTitle.interrupt();
 		}
-		threadGetTitle = new ThreadGetTitleWithForceStop(domains);
+		threadGetTitle = new ThreadGetTitleWithForceStop(domains,tempConfig.getThreadNumber());
 		threadGetTitle.start();
+		DomainPanel.getDomainResult().getNewAndNotGetTitleDomainSet().clear();
 	}
 
 
@@ -515,13 +483,4 @@ public class TitlePanel extends JPanel {
 		lblSummaryOfTitle.setText(status);
 	}
 
-	public static String getCookie() {
-		return cookie;
-	}
-
-	//cookie used at burp.Commons.buildCookieRequest(IExtensionHelpers, String, byte[])
-	//burp.Producer.doRequest(URL)
-	public static void inputCookie() {
-		cookie = JOptionPane.showInputDialog("Input cookie OR Leave it blank", null).trim();
-	}
 }
