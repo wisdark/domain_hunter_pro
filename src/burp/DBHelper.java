@@ -144,11 +144,11 @@ public class DBHelper {
 		return false;
 	}
 
-	public boolean saveDomainObject(DomainManager domainResult){
+	public synchronized boolean saveDomainObject(DomainManager domainResult){
 		try {
 			conn = getConnection();
 			
-			pres = conn.prepareStatement("select * From DOMAINObject");
+			pres = conn.prepareStatement("select ID From DOMAINObject");//会比select * From DOMAINObject 要快吧
 			rs = pres.executeQuery();
 			String sql = "";
 			if (rs.next()){

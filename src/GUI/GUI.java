@@ -1,12 +1,5 @@
 package GUI;
 
-import java.awt.EventQueue;
-import java.io.File;
-import java.io.PrintWriter;
-
-import javax.swing.JFrame;
-import javax.swing.JTabbedPane;
-
 import Tools.ToolPanel;
 import burp.BurpExtender;
 import burp.Commons;
@@ -14,6 +7,11 @@ import burp.DBHelper;
 import burp.dbFileChooser;
 import domain.DomainPanel;
 import title.TitlePanel;
+
+import javax.swing.*;
+import java.awt.*;
+import java.io.File;
+import java.io.PrintWriter;
 
 
 public class GUI extends JFrame {
@@ -24,10 +22,10 @@ public class GUI extends JFrame {
 	protected PrintWriter stdout;
 	protected PrintWriter stderr;
 	public dbFileChooser dbfc = new dbFileChooser();
-	protected ProjectMenu projectMenu;
+	protected static ProjectMenu projectMenu;
 	private ToolPanel toolPanel;
 
-	public ProjectMenu getProjectMenu() {
+	public static ProjectMenu getProjectMenu() {
 		return projectMenu;
 	}
 
@@ -65,6 +63,7 @@ public class GUI extends JFrame {
 		}
 
 		JTabbedPane tabbedWrapper = new JTabbedPane();
+		tabbedWrapper.setName("DomainHunterPro");//需要在从burpFrame向下查找该插件时用到
 		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		setBounds(100, 100, 1174, 497);
 		setContentPane(tabbedWrapper);
@@ -91,6 +90,9 @@ public class GUI extends JFrame {
 			domainPanel.setDomainResult(dbhelper.getDomainObj());
 			domainPanel.showToDomainUI();
 			titlePanel.showToTitleUI(dbhelper.getTitles());
+			GUI.setCurrentDBFile(currentDBFile);
+			GUI.displayProjectName();
+			BurpExtender.saveDBfilepathToExtension();
 			System.out.println("==End Loading Data From: "+ dbFilePath +"==");//输出到debug console
 			stdout.println("==End Loading Data From: "+ dbFilePath +"==");
 			return true;
@@ -102,14 +104,20 @@ public class GUI extends JFrame {
 		}
 	}
 
-
-	public void saveDBfilepathToExtension() {
-		//to save domain result to extensionSetting
-		//仅仅存储sqllite数据库的名称,也就是domainResult的项目名称
-		if (currentDBFile != null)
-			BurpExtender.getCallbacks().saveExtensionSetting(BurpExtender.Extension_Setting_Name_DB_File, currentDBFile.getAbsolutePath());
+	//显示项目名称，加载多个该插件时，进行区分，避免混淆
+	public static void displayProjectName() {
+		if (DomainPanel.getDomainResult() !=null){
+			//String name = GUI.currentDBFile.getName();
+			String name = DomainPanel.getDomainResult().getProjectName();
+			String newName = String.format(BurpExtender.getFullExtenderName()+
+					" [%s]",name);
+			
+			BurpExtender.getCallbacks().setExtensionName(newName); //新插件名称
+			GUI.getProjectMenu().AddDBNameMenuItem(name);
+			GUI.getProjectMenu().AddDBNameTab(name);
+			//gui.repaint();//NO need
+		}
 	}
-
 
 	/*
 	使用数据模型监听后，不需再自行单独保存当前项目了。

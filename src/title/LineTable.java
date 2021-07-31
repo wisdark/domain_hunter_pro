@@ -1,12 +1,11 @@
 package title;
 
-import java.awt.Color;
-import java.awt.Component;
-import java.awt.Desktop;
-import java.awt.Font;
-import java.awt.FontMetrics;
+import java.awt.*;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseMotionAdapter;
 import java.io.PrintWriter;
 import java.net.URI;
 import java.util.Arrays;
@@ -21,6 +20,7 @@ import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.RowFilter;
 import javax.swing.SwingUtilities;
+import javax.swing.ToolTipManager;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumn;
@@ -33,6 +33,8 @@ import burp.IMessageEditor;
 import title.search.History;
 import title.search.LineSearch;
 import title.search.SearchDork;
+import title.search.SearchTextField;
+
 
 public class LineTable extends JTable
 {
@@ -51,6 +53,16 @@ public class LineTable extends JTable
 	private JSplitPane tableAndDetailSplitPane;//table area + detail area
 	public JSplitPane getTableAndDetailSplitPane() {
 		return tableAndDetailSplitPane;
+	}
+
+	@Override//参考javax.swing.JTable中的函数，每次都有主动进行转换
+	public Object getValueAt(int row, int column) {
+		return getModel().getValueAt(convertRowIndexToModel(row),
+				convertColumnIndexToModel(column));
+	}
+
+	public LineEntry getRowAt(int row) {
+		return getModel().getLineEntries().getValueAtIndex(convertRowIndexToModel(row));
 	}
 
 	//将选中的行（图形界面的行）转换为Model中的行数（数据队列中的index）.因为图形界面排序等操作会导致图像和数据队列的index不是线性对应的。
@@ -93,7 +105,8 @@ public class LineTable extends JTable
 	public void changeSelection(int row, int col, boolean toggle, boolean extend)
 	{
 		// show the log entry for the selected row
-		LineEntry Entry = this.lineTableModel.getLineEntries().getValueAtIndex(super.convertRowIndexToModel(row));
+		//LineEntry Entry = this.lineTableModel.getLineEntries().getValueAtIndex(super.convertRowIndexToModel(row));
+		LineEntry Entry = this.getRowAt(row);
 
 		requestViewer.setMessage(Entry.getRequest(), true);
 		responseViewer.setMessage(Entry.getResponse(), false);
@@ -238,22 +251,25 @@ public class LineTable extends JTable
 		});
 	}
 
-	//搜索功能函数
-	public void search(String Inputkeyword) {
+	/**
+	 * 搜索功能，自动获取caseSensitive的值
+	 * @param Inputkeyword
+	 */
+	public void search(String keyword) {
+		SearchTextField searchTextField = (SearchTextField)TitlePanel.getTextFieldSearch();
+		boolean caseSensitive = searchTextField.isCaseSensitive();
+		search(keyword,caseSensitive);
+	}
+
+	/**
+	 * 搜索功能
+	 * @param Inputkeyword
+	 * @param caseSensitive
+	 */
+	public void search(String Input,boolean caseSensitive) {
 		//rowSorter.setRowFilter(RowFilter.regexFilter("(?i)" + keyword));
-		History.getInstance().addRecord(Inputkeyword);//记录搜索历史,单例模式
+		History.getInstance().addRecord(Input);//记录搜索历史,单例模式
 
-		Inputkeyword = Inputkeyword.trim().toLowerCase();
-		if (Inputkeyword.contains("\"") || Inputkeyword.contains("\'")){
-			//为了处理输入是"dork:12345"的情况，下面的这种写法其实不严谨，中间也可能有引号，不过应付一般的搜索足够了。
-			Inputkeyword = Inputkeyword.replaceAll("\"", "");
-			Inputkeyword = Inputkeyword.replaceAll("\'", "");
-		}
-
-		String dork = SearchDork.grepDork(Inputkeyword);
-		String keyword =  SearchDork.grepKeyword(Inputkeyword);
-
-		//stdout.println("dork:"+dork+"   keyword:"+keyword);
 		final RowFilter filter = new RowFilter() {
 			@Override
 			public boolean include(Entry entry) {
@@ -266,18 +282,18 @@ public class LineTable extends JTable
 					return false;
 				}
 
-				if (SearchDork.isDork(dork)) {
+				if (SearchDork.isDork(Input)) {
 					//stdout.println("do dork search,dork:"+dork+"   keyword:"+keyword);
-					return LineSearch.dorkFilte(line,dork,keyword);
+					return LineSearch.dorkFilter(line,Input,caseSensitive);
 				}else {
-					return LineSearch.textFilte(line,keyword);
+					return LineSearch.textFilter(line,Input,caseSensitive);
 				}
 			}
 		};
 		rowSorter.setRowFilter(filter);
 	}
 
-	
+
 	public void registerListeners(){
 		LineTable.this.setRowSelectionAllowed(true);
 		this.addMouseListener( new MouseAdapter()
@@ -290,9 +306,10 @@ public class LineTable extends JTable
 
 					//int row = ((LineTable) e.getSource()).rowAtPoint(e.getPoint()); // 获得行位置
 					int col = ((LineTable) e.getSource()).columnAtPoint(e.getPoint()); // 获得列位置
+					int modelCol = LineTable.this.convertColumnIndexToModel(col);
 
 					LineEntry selecteEntry = LineTable.this.lineTableModel.getLineEntries().getValueAtIndex(rows[0]);
-					if ((col==0 )) {//双击index在google中搜索host。
+					if ((modelCol == LineTableModel.getTitletList().indexOf("#") )) {//双击index在google中搜索host。
 						String host = selecteEntry.getHost();
 						String url= "https://www.google.com/search?q=site%3A"+host;
 						try {
@@ -304,34 +321,43 @@ public class LineTable extends JTable
 						} catch (Exception e2) {
 							e2.printStackTrace();
 						}
-					}else if(col==1) {//双击url在浏览器中打开
+					}else if(modelCol==LineTableModel.getTitletList().indexOf("URL")) {//双击url在浏览器中打开
 						try{
 							String url = selecteEntry.getUrl();
 							Commons.browserOpen(url,ToolPanel.getLineConfig().getBrowserPath());
 						}catch (Exception e1){
 							e1.printStackTrace(stderr);
 						}
-					}else if (col == LineTableModel.getTitletList().indexOf("isChecked")) {
+					}else if (modelCol == LineTableModel.getTitletList().indexOf("isChecked")) {
 						try{
 							//LineTable.this.lineTableModel.updateRowsStatus(rows,LineEntry.CheckStatus_Checked);//处理多行
 							String currentStatus= selecteEntry.getCheckStatus();
 							List<String> tmpList = Arrays.asList(LineEntry.CheckStatusArray);
 							int index = tmpList.indexOf(currentStatus);
-							String newStatus = tmpList.get((index+1)%3);
+							String newStatus = tmpList.get((index+1)%LineEntry.CheckStatusArray.length);
 							selecteEntry.setCheckStatus(newStatus);
-							stdout.println("$$$ "+selecteEntry.getUrl()+" status has been set to "+LineEntry.CheckStatus_Checked);
+							stdout.println("$$$ "+selecteEntry.getUrl()+" status has been set to "+newStatus);
 							LineTable.this.lineTableModel.fireTableRowsUpdated(rows[0], rows[0]);
 						}catch (Exception e1){
 							e1.printStackTrace(stderr);
 						}
-					}else if (col == LineTableModel.getTitletList().indexOf("Level")) {
-						String currentLevel = selecteEntry.getLevel();
-						List<String> tmpList = Arrays.asList(LineEntry.LevelArray);
+					}else if (modelCol == LineTableModel.getTitletList().indexOf("AssetType")) {
+						String currentLevel = selecteEntry.getAssetType();
+						List<String> tmpList = Arrays.asList(LineEntry.AssetTypeArray);
 						int index = tmpList.indexOf(currentLevel);
 						String newLevel = tmpList.get((index+1)%3);
-						selecteEntry.setLevel(newLevel);
-						stdout.println(String.format("$$$ %s updated [level-->%s]",selecteEntry.getUrl(),newLevel));
+						selecteEntry.setAssetType(newLevel);
+						stdout.println(String.format("$$$ %s updated [AssetType-->%s]",selecteEntry.getUrl(),newLevel));
 						LineTable.this.lineTableModel.fireTableRowsUpdated(rows[0], rows[0]);
+					}else{//LineTableModel.getTitletList().indexOf("CDN|CertInfo")
+						//String value = TitlePanel.getTitleTable().getValueAt(rows[0], col).toString();//rows[0]是转换过的，不能再转换
+						//调用的是原始Jtable中的getValueAt，它本质上也是调用model中的getValueAt，但是有一次转换的过程！！！
+						String value = LineTable.this.lineTableModel.getValueAt(rows[0],modelCol).toString();
+						//调用的是我们自己实现的TableModel类中的getValueAt,相比Jtable类中的同名方法，就少了一次转换的过程！！！
+						//String CDNAndCertInfo = selecteEntry.getCDN();
+						Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+						StringSelection selection = new StringSelection(value);
+						clipboard.setContents(selection, null);
 					}
 				}
 			}
@@ -360,7 +386,38 @@ public class LineTable extends JTable
 				mouseReleased(e);
 			}
 
-		});
+			@Override
+			public void mouseEntered(MouseEvent e){
+				//displayCDNAndCertInfo(e);
+			}
 
+			@Override
+			public void mouseMoved(MouseEvent evt) {
+				//displayCDNAndCertInfo(evt);
+			}
+
+			//鼠标移动到证书信息时，浮动显示完整内容
+			@Deprecated //效果不是很好，弃用
+			public void displayCDNAndCertInfo(MouseEvent evt){
+				int row = TitlePanel.getTitleTable().rowAtPoint(evt.getPoint());
+				int modelRow = TitlePanel.getTitleTable().convertRowIndexToModel(row);
+
+				int colunm = TitlePanel.getTitleTable().columnAtPoint(evt.getPoint());
+				int modelColunm = TitlePanel.getTitleTable().convertColumnIndexToModel(colunm);
+
+				int headerIndex = LineTableModel.getTitletList().indexOf("CDN|CertInfo");
+
+				if (modelColunm == headerIndex) {
+					String informations = TitlePanel.getTitleTable().getValueAt(row, colunm).toString();
+					//调用的是原始Jtable中的getValueAt，有一次自动转换行列index的过程！
+					//String value = LineTable.this.lineTableModel.getValueAt(modelRow,modelColunm).toString();
+					//调用的是我们自己实现TableModel类中的getValueAt,没有行列index自动转换！！！
+					if  (informations.length()>=15) {
+						TitlePanel.getTitleTable().setToolTipText(informations);
+						ToolTipManager.sharedInstance().setDismissDelay(5000);// 设置为5秒
+					}
+				}
+			}
+		});
 	}
 }

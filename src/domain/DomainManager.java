@@ -1,5 +1,6 @@
 package domain;
 
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -36,8 +37,9 @@ public class DomainManager {
 	private Set<String> subDomainSet = new HashSet<String>();
 	private Set<String> similarDomainSet = new HashSet<String>();
 	private Set<String> relatedDomainSet = new HashSet<String>();
-	private Set<String> blackDomainSet = new HashSet<String>();//有效(能解析IP)但无用的域名，比如JD的网店域名；唯一的用处是用来聚合网段。
-	private Set<String> blackIPOrNetSet = new HashSet<String>();//IP或网段黑名单，用于get Title前的资产排除。
+	private Set<String> IsTargetButUselessDomainSet = new HashSet<String>();
+	//有效(能解析IP)但无用的域名，比如JD的网店域名、首页域名等对信息收集、聚合网段、目标界定有用，但是本身几乎不可能有漏洞的资产。
+	private Set<String> NotTargetIPSet = new HashSet<String>();//IP集合，那些非目标资产的IP集合。只存IP，不存网段。
 	private HashMap<String,Integer> unkownDomainMap = new HashMap<String,Integer>();//记录域名和解析失败的次数，大于五次就从子域名中删除。
 	private Set<String> EmailSet = new HashSet<String>();
 	private Set<String> PackageNameSet = new HashSet<String>();
@@ -125,23 +127,21 @@ public class DomainManager {
 		this.relatedDomainSet = relatedDomainSet;
 	}
 
-
-
-	public Set<String> getBlackDomainSet() {
-		return blackDomainSet;
+	public Set<String> getIsTargetButUselessDomainSet() {
+		return IsTargetButUselessDomainSet;
 	}
 
-	public void setBlackDomainSet(Set<String> blackDomainSet) {
-		this.blackDomainSet = blackDomainSet;
+	public void setIsTargetButUselessDomainSet(Set<String> isTargetButUselessDomainSet) {
+		IsTargetButUselessDomainSet = isTargetButUselessDomainSet;
 	}
 
 
-	public Set<String> getBlackIPOrNetSet() {
-		return blackIPOrNetSet;
+	public Set<String> getNotTargetIPSet() {
+		return NotTargetIPSet;
 	}
 
-	public void setBlackIPOrNetSet(Set<String> blackIPOrNetSet) {
-		this.blackIPOrNetSet = blackIPOrNetSet;
+	public void setNotTargetIPSet(Set<String> notTargetIPSet) {
+		NotTargetIPSet = notTargetIPSet;
 	}
 
 	public Set<String> getEmailSet() {
@@ -219,6 +219,23 @@ public class DomainManager {
 		return String.join(System.lineSeparator(), tmplist);
 	}
 
+	public String fetchSubDomainsOf(String rootDomain) {
+		List<String> tmplist = new ArrayList<>();
+		if (domainType(rootDomain)==DomainManager.SUB_DOMAIN) {//判断是否有效rootDomain
+			if (!rootDomain.startsWith(".")) {
+				rootDomain = "."+rootDomain;
+			}
+			for (String item:subDomainSet) {
+				if(item.endsWith(rootDomain)) {
+					tmplist.add(item);
+				}
+			}
+			Collections.sort(tmplist);
+			return String.join(System.lineSeparator(), tmplist);
+		}
+		return "";
+	}
+
 	public String fetchEmails() {
 		List<String> tmplist= new ArrayList<>(EmailSet);
 		Collections.sort(tmplist);
@@ -282,6 +299,26 @@ public class DomainManager {
 	}
 
 
+	//这种一般只会是IP类资产才会需要这样判断吧，域名类很容易确定是否属于目标
+	public boolean isTargetByBlackList(String HostIP) {
+		return !NotTargetIPSet.contains(HostIP);
+	}
+
+	/*
+	 * 用于判断站点是否是我们的目标范围，原理是根据证书的所有域名中，是否有域名包含了关键词。
+	 * 为了避免漏掉有效目标，只有完全确定非目标的才排除！！！
+	 */
+	public boolean isTargetByCertInfo(Set<String> certDomains) {
+		if (certDomains.isEmpty() || certDomains ==null) {//不能判断的，还是暂时认为是在目标中的。
+			return true;
+		}
+		for (String domain:certDomains) {
+			if (domainType(domain) == DomainManager.SUB_DOMAIN) {
+				return true;
+			}
+		}
+		return false;
+	}
 
 	public void AddToRootDomainMap(String key,String value) {
 		if (this.rootDomainMap.containsKey(key) && this.rootDomainMap.containsValue(value)) {
@@ -357,6 +394,9 @@ public class DomainManager {
 
 	public static String getRootDomain(String inputDomain) {
 		try {
+			if (inputDomain.toLowerCase().startsWith("http://") || inputDomain.toLowerCase().startsWith("https://")) {
+				inputDomain = new URL(inputDomain).getHost();
+			}
 			String rootDomain =InternetDomainName.from(inputDomain).topPrivateDomain().toString();
 			return rootDomain;
 		}catch(Exception e) {
@@ -366,22 +406,22 @@ public class DomainManager {
 	}
 
 	public int domainType(String domain) {
-		if (domain.contains(":")) {//处理带有端口号的域名
-			domain = domain.substring(0,domain.indexOf(":"));
-		}
-
 		try {
+			if (domain.contains(":")) {//处理带有端口号的域名
+				domain = domain.substring(0,domain.indexOf(":"));
+			}
+
 			domain = domain.toLowerCase().trim();
 			if (domain.endsWith(".")) {
 				domain = domain.substring(0,domain.length()-1);
 			}
 
-			if (!domain.contains(".")) return DomainManager.USELESS;
-
 			if (Commons.isValidIP(domain)) {//https://202.77.129.30
 				return DomainManager.IP_ADDRESS;
 			}
-
+			if (!Commons.isValidDomain(domain)) {
+				return DomainManager.USELESS;
+			}
 			if (isInRootBlackDomain(domain)) {
 				return DomainManager.USELESS;
 			}

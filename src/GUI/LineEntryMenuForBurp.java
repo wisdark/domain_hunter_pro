@@ -21,6 +21,7 @@ import Tools.ToolPanel;
 import burp.BurpExtender;
 import burp.Commons;
 import burp.Getter;
+import burp.HttpMessageCharSet;
 import burp.IContextMenuInvocation;
 import burp.IExtensionHelpers;
 import burp.IHttpRequestResponse;
@@ -36,7 +37,6 @@ public class LineEntryMenuForBurp{
 	public static IExtensionHelpers helpers = BurpExtender.getCallbacks().getHelpers();
 	public PrintWriter stdout = BurpExtender.getStdout();
 
-
 	public List<JMenuItem> createMenuItemsForBurp(IContextMenuInvocation invocation) {
 		List<JMenuItem> JMenuItemList = new ArrayList<JMenuItem>();
 		/*
@@ -48,7 +48,7 @@ public class LineEntryMenuForBurp{
 
 		JMenuItem runWithSamePathItem = new JMenuItem("^_^ Run Targets with this path");
 		runWithSamePathItem.addActionListener(new runWithSamePath(invocation));
-		
+
 		JMenuItem doDirBruteItem = new JMenuItem("^_^ Do Dir Brute");
 		doDirBruteItem.addActionListener(new doDirBrute(invocation));
 
@@ -76,42 +76,54 @@ public class LineEntryMenuForBurp{
 		//替换方案2：
 		JMenu setLevelAs2 = new JMenu("^_^ Set Level As");
 		setAsChecked.addActionListener(new setLevelAsActionListener(invocation,setLevelAs2));
-		
-		
-		
+
+		JMenuItem sendToToolPanel = new JMenuItem("^_^ Send To Tool Panel");
+		sendToToolPanel.addActionListener(new sendToToolPanel(invocation));
+
 		JMenuItemList.add(setAsChecked);
 		JMenuItemList.add(setLevelAs2);
-		
+
 		JMenuItemList.add(addRequestToDomainHunter);
 		JMenuItemList.add(addCommentToDomainHunter);
-		
+
 		JMenuItemList.add(addDomainToDomainHunter);
 		//JMenuItemList.add(doDirBruteItem);
 		JMenuItemList.add(runWithSamePathItem);
-		
-		
+		JMenuItemList.add(sendToToolPanel);
+
 		if (ToolPanel.showItemsInOne.isSelected()) {
 			ArrayList<JMenuItem> result = new ArrayList<JMenuItem>();
+
 			JMenu domainHunterPro = new JMenu("^_^ Domain Hunter Pro");
+			if (!ProjectMenu.isAlone()) {
+				String proName = DomainPanel.getDomainResult().getProjectName();
+				domainHunterPro.setText(String.format("^_^ Domain Hunter Pro [%s]",proName));
+			}
 			result.add(domainHunterPro);
 			for (JMenuItem item : JMenuItemList) {
 				domainHunterPro.add(item);
 			}
 			return result;
 		}else {
+			if (!ProjectMenu.isAlone()) {
+				String proName = DomainPanel.getDomainResult().getProjectName();
+				for (JMenuItem item : JMenuItemList) {
+					item.setText("^_^ "+proName+"-->"+item.getText().replace("^_^ ", ""));
+				}
+			}
 			return JMenuItemList;
 		}
 	}
 
 	public static void addLevelABC(JMenu topMenu,final LineTable lineTable, final int[] rows){
-		String[] MainMenu = {LineEntry.Level_A, LineEntry.Level_B, LineEntry.Level_C};
+		String[] MainMenu = LineEntry.AssetTypeArray;
 		for(int i = 0; i < MainMenu.length; i++){
 			JMenuItem item = new JMenuItem(MainMenu[i]);
 			item.addActionListener(new ActionListener() {
 
 				@Override
 				public void actionPerformed(ActionEvent e) {
-					lineTable.getModel().updateLevelofRows(rows,e.getActionCommand());
+					lineTable.getModel().updateAssetTypeOfRows(rows,e.getActionCommand());
 				}
 
 			});
@@ -187,8 +199,78 @@ public class LineEntryMenuForBurp{
 			worker.execute();
 		}
 	}
-	
-	
+
+	public class sendToToolPanel implements ActionListener{
+		private IContextMenuInvocation invocation;
+		sendToToolPanel(IContextMenuInvocation invocation) {
+			this.invocation  = invocation;
+		}
+		@Override
+		public void actionPerformed(ActionEvent e)
+		{
+			SwingWorker<Map, Map> worker = new SwingWorker<Map, Map>() {
+				//using SwingWorker to prevent blocking burp main UI.
+
+				@Override
+				protected Map doInBackground() throws Exception {
+					ToolPanel.inputTextArea.setText(getSelectedStringByBurp());
+					return null;
+				}
+				@Override
+				protected void done() {
+				}
+			};
+			worker.execute();
+		}
+
+		public String getSelectedStringByBurp(){
+			String result = "";
+
+			IHttpRequestResponse[] messages = invocation.getSelectedMessages();
+
+			if (messages == null ) {
+				return result;
+			}
+
+			if (messages.length == 1) {
+				IHttpRequestResponse message = messages[0];
+				/////////////selected url/////////////////
+				byte[] source = null;
+
+
+				int context = invocation.getInvocationContext();
+				if (context==IContextMenuInvocation.CONTEXT_MESSAGE_EDITOR_REQUEST
+						|| context ==IContextMenuInvocation.CONTEXT_MESSAGE_VIEWER_REQUEST
+						|| context == IContextMenuInvocation.CONTEXT_PROXY_HISTORY
+						|| context == IContextMenuInvocation.CONTEXT_INTRUDER_ATTACK_RESULTS
+						|| context == IContextMenuInvocation.CONTEXT_SEARCH_RESULTS
+						|| context == IContextMenuInvocation.CONTEXT_TARGET_SITE_MAP_TABLE
+						|| context == IContextMenuInvocation.CONTEXT_TARGET_SITE_MAP_TREE) {
+					source = message.getRequest();
+				}else {
+					source = message.getResponse();
+				}
+
+				int[] selectedIndex = invocation.getSelectionBounds();//当数据包中有中文或其他宽字符的时候，这里的返回值不正确。已报bug。
+				//stdout.println(selectedIndex[0]+":"+selectedIndex[1]);
+				//这里的index应该是字符串的index，进行选中操作时对象应该是字符文本内容，无论是一个中文还是一个字母，都是一个文本字符。这就是我们通常的文本操作啊，之前是想多了。
+				//burp进行的byte和string之间的转换，没有考虑特定的编码，是一刀切的方式，所以将index用于byte序列上，就不能正确对应。
+
+				if(source!=null && selectedIndex !=null && selectedIndex[1]-selectedIndex[0]>=3) {
+					String originalCharSet = HttpMessageCharSet.getCharset(source);
+					String text;
+					try {
+						text = new String(source,originalCharSet);
+					}catch(Exception e) {
+						text = new String(source);
+					}
+					result = text.substring(selectedIndex[0], selectedIndex[1]);
+				}
+			}
+			return result;
+		}
+	}
+
 	public class doDirBrute implements ActionListener{
 		private IContextMenuInvocation invocation;
 		doDirBrute(IContextMenuInvocation invocation) {
@@ -236,14 +318,14 @@ public class LineEntryMenuForBurp{
 			try{
 				IHttpRequestResponse[] messages = invocation.getSelectedMessages();
 				Getter getter = new Getter(helpers);
-				
+
 				String host = messages[0].getHttpService().getHost();
 				int port = messages[0].getHttpService().getPort();
-				
+
 				List<LineEntry> entries = TitlePanel.getTitleTableModel().findLineEntriesByHostAndPort(host, port);
-				
+
 				if (entries.size() == 0) {
-					
+
 				}else if (entries.size() == 1){
 					addCommentForLine(entries.get(0));
 				}else {
@@ -279,7 +361,7 @@ public class LineEntryMenuForBurp{
 				IHttpRequestResponse[] messages = invocation.getSelectedMessages();
 				List<LineEntry> entries = TitlePanel.getTitleTableModel().findLineEntriesByHostAndPort(messages[0].getHttpService().getHost()
 						,messages[0].getHttpService().getPort());
-				
+
 				if (entries.size() > 0) {
 					for (LineEntry entry:entries) {
 						//addCommentForLine(entry);
@@ -365,20 +447,20 @@ public class LineEntryMenuForBurp{
 						}else {
 							//topMenu.add(new JMenuItem("Null"));
 						}
-						
-						
-//						IHttpRequestResponse[] messages = invocation.getSelectedMessages();
-//						Getter getter = new Getter(helpers);
-//						if (messages[0] != null) {
-//							String host = getter.getHost(messages[0]);
-//							List<LineEntry> entries = TitlePanel.getTitleTableModel().findLineEntriesByHost(host);
-//							if (entries.size() > 0) {
-//								for (LineEntry entry:entries) {
-//									int index = TitlePanel.getTitleTable().getModel().getLineEntries().IndexOfKey(entry.getUrl());
-//									addLevelABC(topMenu,TitlePanel.getTitleTable(),new int[] {index});
-//								}
-//							}
-//						}
+
+
+						//						IHttpRequestResponse[] messages = invocation.getSelectedMessages();
+						//						Getter getter = new Getter(helpers);
+						//						if (messages[0] != null) {
+						//							String host = getter.getHost(messages[0]);
+						//							List<LineEntry> entries = TitlePanel.getTitleTableModel().findLineEntriesByHost(host);
+						//							if (entries.size() > 0) {
+						//								for (LineEntry entry:entries) {
+						//									int index = TitlePanel.getTitleTable().getModel().getLineEntries().IndexOfKey(entry.getUrl());
+						//									addLevelABC(topMenu,TitlePanel.getTitleTable(),new int[] {index});
+						//								}
+						//							}
+						//						}
 					}
 					catch (Exception e1)
 					{
@@ -395,7 +477,7 @@ public class LineEntryMenuForBurp{
 		}
 
 	}
-	
+
 	@Deprecated//该方案响应速度慢，弃用
 	public class setLevelAsMouseListener extends MouseAdapter{
 		private IContextMenuInvocation invocation;
@@ -433,7 +515,7 @@ public class LineEntryMenuForBurp{
 			}
 		}
 	}
-	
+
 	public static LineEntry findLineEntryByFullUrl(List<LineEntry> lineEntries, String url) {
 		url = Commons.formateURLString(url);
 		for(LineEntry item:lineEntries) {
@@ -453,15 +535,7 @@ public class LineEntryMenuForBurp{
 			commentAdd = JOptionPane.showInputDialog("Comments", null).trim();
 		}
 		if (commentAdd != null) {
-			String comment = entry.getComment().trim();
-			if (comment == null || comment.equals("")) {
-				comment = commentAdd;
-			}else if(comment.contains(commentAdd)){
-				//do nothing
-			}else{
-				comment = comment+","+commentAdd;
-			}
-			entry.setComment(comment);
+			entry.addComment(commentAdd);
 			TitlePanel.getTitleTableModel().fireTableRowsUpdated(index,index);//主动通知更新，否则不会写入数据库!!!
 		}
 	}
@@ -488,12 +562,12 @@ public class LineEntryMenuForBurp{
 			Getter getter = new Getter(helpers);
 			URL fullurl = getter.getFullURL(message);
 			LineEntry entry = TitlePanel.getTitleTableModel().findLineEntry(fullurl.toString());
-			
+
 			LineEntry newEntry = new LineEntry(message);
 			newEntry.setComment("Manual-Saved");
 			newEntry.setCheckStatus(LineEntry.CheckStatus_UnChecked);
 			newEntry.setManualSaved(true);
-			
+
 			if (entry != null) {//存在相同URL的记录
 				int user_input = JOptionPane.showConfirmDialog(null, "Do you want to overwrite?","Item already exist",JOptionPane.YES_NO_CANCEL_OPTION);
 				if (JOptionPane.YES_OPTION == user_input) {
@@ -505,10 +579,10 @@ public class LineEntryMenuForBurp{
 			}else {//不存在相同记录，直接新增
 				TitlePanel.getTitleTableModel().addNewLineEntry(newEntry); //add request，新增
 			}
-			
+
 			String host = message.getHttpService().getHost();
 			DomainPanel.getDomainResult().addToDomainOject(host); //add domain
-			
+
 		}
 	}
 }

@@ -7,6 +7,7 @@ import java.util.Set;
 import com.alibaba.fastjson.JSON;
 
 import burp.BurpExtender;
+import burp.Commons;
 import title.LineEntry;
 import title.TitlePanel;
 
@@ -22,14 +23,33 @@ public class LineConfig {
 	//对于内外网域名或IP的处理分为2种情况：
 	//1、外网模式，即在自己公司挖掘别人公司的漏洞。这个是时候收集到的域名如果是解析到私有IP的，仅仅显示就可以了；如果是私有IP地址则直接忽略。
 	//2、内网模式，即在自己公司挖掘自己公司的漏洞。这个时候所有域名一视同仁，全部和外网域名一样进行请求并获取title，因为内网的IP也是可以访问的。
-
-	private String python3Path = "C:\\Python37\\python.exe";
+	public static final String winDefaultPython = "C:\\Python37\\python.exe";
+	public static final String winDefaultBrowserPath = "C:\\Program Files (x86)\\Mozilla Firefox\\firefox.exe";
+	public static final String defaultNmap = "nmap -Pn -sT -sV --min-rtt-timeout 1ms "
+			+ "--max-rtt-timeout 1000ms --max-retries 0 --max-scan-delay 0 --min-rate 3000 {host}";
+	public static final String macDefaultPython = "/usr/bin/python";
+	public static final String macDefaultBrowserPath = "/Applications/Firefox.app/Contents/MacOS/firefox";
+	
+	private String python3Path = winDefaultPython;
 	private String dirSearchPath = "D:\\github\\dirsearch\\dirsearch.py";
 	private String browserPath = "C:\\Program Files (x86)\\Mozilla Firefox\\firefox.exe";
-	private String nmapPath ="D:\\Program Files (x86)\\Nmap\\nmap.exe";
+	private String nmapPath =defaultNmap;
 	private String bruteDict ="D:\\github\\webdirscan\\dict\\dict.txt";
 	private String toolPanelText = "";
+	private String elasticApiUrl = "http://10.12.72.55:9200/";
+	private String elasticUsernameAndPassword = "elastic:changeme";
+	private String uploadApiToken = "";
 	private boolean showItemsInOne = false;
+	private boolean enableElastic = false;
+	
+	LineConfig(){
+		if (Commons.isMac()) {
+			python3Path = macDefaultPython;
+			browserPath = macDefaultBrowserPath;
+		}
+	}
+
+	
 
 
 	public static int getMaximumEntries() {
@@ -136,6 +156,42 @@ public class LineConfig {
 		this.toolPanelText = toolPanelText;
 	}
 
+	public String getElasticApiUrl() {
+		return elasticApiUrl;
+	}
+
+
+
+	public void setElasticApiUrl(String elasticApiUrl) {
+		this.elasticApiUrl = elasticApiUrl;
+	}
+
+
+
+	public String getElasticUsernameAndPassword() {
+		return elasticUsernameAndPassword;
+	}
+
+
+
+	public void setElasticUsernameAndPassword(String elasticUsernameAndPassword) {
+		this.elasticUsernameAndPassword = elasticUsernameAndPassword;
+	}
+
+
+
+	public String getUploadApiToken() {
+		return uploadApiToken;
+	}
+
+
+
+	public void setUploadApiToken(String uploadApiToken) {
+		this.uploadApiToken = uploadApiToken;
+	}
+
+
+
 	public boolean isShowItemsInOne() {
 		return showItemsInOne;
 	}
@@ -143,6 +199,18 @@ public class LineConfig {
 	public void setShowItemsInOne(boolean showItemsInOne) {
 		this.showItemsInOne = showItemsInOne;
 	}
+
+	public boolean isEnableElastic() {
+		return enableElastic;
+	}
+
+
+
+	public void setEnableElastic(boolean enableElastic) {
+		this.enableElastic = enableElastic;
+	}
+
+
 
 	public String ToJson() {
 		return JSON.toJSONString(this);
@@ -164,6 +232,7 @@ public class LineConfig {
 		PrintWriter stdout = BurpExtender.getStdout();
 		PrintWriter stderr = BurpExtender.getStderr();
 
+		if (entry == null) return false;
 		//default requirement
 		if (entry.getStatuscode() <=0 ) {
 			stdout.println(String.format("--- [%s] --- no response",entry.getUrl()));

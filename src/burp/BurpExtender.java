@@ -1,27 +1,23 @@
 package burp;
 
-import java.awt.Component;
-import java.io.PrintWriter;
-import java.util.Date;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
-
-import javax.swing.JMenuItem;
-import javax.swing.SwingUtilities;
-
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-
 import GUI.GUI;
 import GUI.LineEntryMenuForBurp;
 import Tools.ToolPanel;
 import bsh.This;
+import domain.DomainConsumer;
 import domain.DomainPanel;
 import domain.DomainProducer;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import title.TitlePanel;
+
+import javax.swing.*;
+import java.awt.*;
+import java.io.PrintWriter;
+import java.util.Date;
+import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 
 public class BurpExtender implements IBurpExtender, ITab, IExtensionStateListener,IContextMenuFactory,IHttpListener{
 	/**
@@ -36,12 +32,12 @@ public class BurpExtender implements IBurpExtender, ITab, IExtensionStateListene
 	private static String Author = "by bit4woo";
 	private static String github = "https://github.com/bit4woo/domain_hunter_pro";
 	private static GUI gui;
-	public static final String Extension_Setting_Name_DB_File = "domain-Hunter-pro-db-path";
 	public static final String Extension_Setting_Name_Line_Config = "domain-Hunter-pro-line-config";
-	private static final Logger log=LogManager.getLogger(BurpExtender.class);
-	private IExtensionHelpers helpers;
+	public static final String Extension_Setting_Name_DB_File = "domain-Hunter-pro-db-file-path";
 
+	private static final Logger log=LogManager.getLogger(BurpExtender.class);
 	public static DomainProducer liveAnalysisTread;
+	public static DomainConsumer liveDataSaveTread;
 	public static BlockingQueue<IHttpRequestResponse> liveinputQueue = new LinkedBlockingQueue<IHttpRequestResponse>();
 	//use to store messageInfo of proxy live
 	public static BlockingQueue<IHttpRequestResponse> inputQueue = new LinkedBlockingQueue<IHttpRequestResponse>();
@@ -92,6 +88,22 @@ public class BurpExtender implements IBurpExtender, ITab, IExtensionStateListene
 		return ExtenderName+" "+Version+" "+Author;
 	}
 
+
+	public static void saveDBfilepathToExtension() {
+		//to save domain result to extensionSetting
+		//仅仅存储sqllite数据库的名称,也就是domainResult的项目名称
+		if (GUI.currentDBFile != null) {
+			BurpExtender.getCallbacks().saveExtensionSetting(BurpExtender.Extension_Setting_Name_DB_File, null);
+			BurpExtender.getCallbacks().saveExtensionSetting(BurpExtender.Extension_Setting_Name_DB_File, GUI.currentDBFile.getAbsolutePath());
+		}
+			
+	}
+
+	public static String loadDBfilepathFromExtension() {
+		return BurpExtender.getCallbacks().loadExtensionSetting(BurpExtender.Extension_Setting_Name_DB_File);
+	}
+
+
 	//当更换DB文件时，需要清空。虽然不清空最终结果不受影响，但是输出内容会比较奇怪。
 	public static void clearQueue() {
 		liveinputQueue.clear();
@@ -104,45 +116,25 @@ public class BurpExtender implements IBurpExtender, ITab, IExtensionStateListene
 		packageNameQueue.clear();
 	}
 
-	/*
-	使用这种方法从Queue中取数据，一来避免了主动clear的操作，二来避免在使用数据后，clear操作之前加进来的数据的丢失。
-	 */
-	public static void moveQueueToSet(BlockingQueue<String> queue, Set<String> resultSet){
-		while (!queue.isEmpty()){
-			try {
-				String item = queue.take();
-				resultSet.add(item);
-			} catch (InterruptedException e) {
-				e.printStackTrace();
-			}
-		}
+
+	public void startLiveCapture(){
+		liveAnalysisTread = new DomainProducer(BurpExtender.liveinputQueue,BurpExtender.subDomainQueue,
+				BurpExtender.similarDomainQueue,BurpExtender.relatedDomainQueue,
+				BurpExtender.emailQueue,BurpExtender.packageNameQueue,9999);//必须是9999，才能保证流量进程不退出。
+		liveAnalysisTread.start();
+
+		liveDataSaveTread = new DomainConsumer(1);
+		liveDataSaveTread.start();
 	}
-	public static void QueueToResult() {
-		HashSet<String> oldSubdomains = new HashSet<String>();
-		oldSubdomains.addAll(DomainPanel.getDomainResult().getSubDomainSet());
 
-		moveQueueToSet(subDomainQueue,DomainPanel.getDomainResult().getSubDomainSet());
-		moveQueueToSet(similarDomainQueue,DomainPanel.getDomainResult().getSimilarDomainSet());
-		moveQueueToSet(relatedDomainQueue,DomainPanel.getDomainResult().getRelatedDomainSet());
-		moveQueueToSet(emailQueue,DomainPanel.getDomainResult().getEmailSet());
-		moveQueueToSet(packageNameQueue,DomainPanel.getDomainResult().getPackageNameSet());
+	public void stopLiveCapture(){
+		if (null != liveAnalysisTread){
+			liveAnalysisTread.stopThread();
+		}
 
-		//		DomainPanel.getDomainResult().getSubDomainSet().addAll(subDomainQueue);
-		//		DomainPanel.getDomainResult().getSimilarDomainSet().addAll(similarDomainQueue);
-		//		DomainPanel.getDomainResult().getRelatedDomainSet().addAll(relatedDomainQueue);
-		//		DomainPanel.getDomainResult().getEmailSet().addAll(emailQueue);
-		//		DomainPanel.getDomainResult().getPackageNameSet().addAll(packageNameQueue);
-
-		HashSet<String> newSubdomains = new HashSet<String>();
-		newSubdomains.addAll(DomainPanel.getDomainResult().getSubDomainSet());
-
-		newSubdomains.removeAll(oldSubdomains);
-		DomainPanel.getDomainResult().getNewAndNotGetTitleDomainSet().addAll(newSubdomains);
-
-		if (newSubdomains.size()>0){
-			stdout.println(String.format("~~~~~~~~~~~~~%s subdomains added!~~~~~~~~~~~~~",newSubdomains.size()));
-			stdout.println(String.join(System.lineSeparator(), newSubdomains));
-			DomainPanel.autoSave();//进行一次主动保存
+		if (null != liveDataSaveTread){
+			liveDataSaveTread.QueueToResult();
+			liveDataSaveTread.stopThread();
 		}
 	}
 
@@ -151,7 +143,6 @@ public class BurpExtender implements IBurpExtender, ITab, IExtensionStateListene
 	public void registerExtenderCallbacks(IBurpExtenderCallbacks callbacks)
 	{
 		BurpExtender.callbacks = callbacks;
-		helpers = callbacks.getHelpers();
 
 		getStdout();
 		getStderr();
@@ -175,38 +166,37 @@ public class BurpExtender implements IBurpExtender, ITab, IExtensionStateListene
 		});
 
 		//recovery save domain results from extensionSetting
-		String content = callbacks.loadExtensionSetting(Extension_Setting_Name_DB_File);//file name of db file
-		System.out.println(content);
-		if (content != null && content.endsWith(".db")) {
-			gui.LoadData(content);
+		String dbFilePath = loadDBfilepathFromExtension();
+		System.out.println("Database FileName From Extension Setting: "+dbFilePath);
+		if (dbFilePath != null && dbFilePath.endsWith(".db")) {
+			gui.LoadData(dbFilePath);
 		}
 
 		gui.getToolPanel().loadConfigToGUI();
-
-		liveAnalysisTread = new DomainProducer(BurpExtender.liveinputQueue,BurpExtender.subDomainQueue,
-				BurpExtender.similarDomainQueue,BurpExtender.relatedDomainQueue,
-				BurpExtender.emailQueue,BurpExtender.packageNameQueue,9999);//必须是9999，才能保证流量进程不退出。
-		liveAnalysisTread.start();
+		startLiveCapture();
 	}
 
 	@Override
 	public void extensionUnloaded() {
-		QueueToResult();
-		if (TitlePanel.threadGetTitle != null) {
-			TitlePanel.threadGetTitle.interrupt();//maybe null
-		}//必须要先结束线程，否则获取数据的操作根本无法结束，因为线程一直通过sync占用资源
-
-		gui.saveDBfilepathToExtension();
-		gui.getProjectMenu().remove();
+		try {//避免这里错误导致保存逻辑的失效
+			GUI.getProjectMenu().remove();
+			stopLiveCapture();
+			if (TitlePanel.threadGetTitle != null) {
+				TitlePanel.threadGetTitle.interrupt();//maybe null
+			}//必须要先结束线程，否则获取数据的操作根本无法结束，因为线程一直通过sync占用资源
+		} catch (Exception e) {
+			e.printStackTrace(stderr);
+		}
 
 		gui.getToolPanel().saveConfigToDisk();
 		DomainPanel.autoSave();//域名面板自动保存逻辑有点复杂，退出前再自动保存一次
+		saveDBfilepathToExtension();
 	}
 
 	//ITab必须实现的两个方法
 	@Override
 	public String getTabCaption() {
-		return (ExtenderName);
+		return (ExtenderName.replaceAll(" ",""));
 	}
 	@Override
 	public Component getUiComponent() {
@@ -226,10 +216,6 @@ public class BurpExtender implements IBurpExtender, ITab, IExtensionStateListene
 	public void processHttpMessage(int toolFlag, boolean messageIsRequest, IHttpRequestResponse messageInfo) {
 		if (toolFlag == IBurpExtenderCallbacks.TOOL_PROXY && !messageIsRequest) {
 			liveinputQueue.add(messageInfo);
-		}
-
-		if ((new Date().getMinutes()) % 5 == 0) {
-			QueueToResult();
 		}
 	}
 

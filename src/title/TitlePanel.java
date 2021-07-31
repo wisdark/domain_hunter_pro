@@ -8,8 +8,11 @@ import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -40,6 +43,7 @@ public class TitlePanel extends JPanel {
 	public static JRadioButton rdbtnUnCheckedItems;
 	public static JRadioButton rdbtnCheckingItems;
 	public static JRadioButton rdbtnCheckedItems;
+	public static JRadioButton rdbtnMoreActionItems;
 
 	//add table and tablemodel to GUI
 	private static LineTableModel titleTableModel = new LineTableModel();
@@ -49,7 +53,7 @@ public class TitlePanel extends JPanel {
 	public static GetTitleTempConfig tempConfig; //每次获取title过程中的配置。
 	private IndexedLinkedHashMap<String,LineEntry> BackupLineEntries;
 
-	private static JTextField textFieldSearch;
+	private static SearchTextField textFieldSearch;
 
 	public static JTextField getTextFieldSearch() {
 		return textFieldSearch;
@@ -304,14 +308,14 @@ public class TitlePanel extends JPanel {
 		});
 		buttonPanel.add(btnStop);
 
-		textFieldSearch = new SearchTextField().Create("");
+		textFieldSearch = new SearchTextField("");
 		buttonPanel.add(textFieldSearch);
 
 
 		JButton buttonSearch = new JButton("Search");
 		buttonSearch.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
-				String keyword = textFieldSearch.getText().trim();
+				String keyword = textFieldSearch.getText();
 				titleTable.search(keyword);
 				//searchHistory.addRecord(keyword);
 				digStatus();
@@ -323,9 +327,7 @@ public class TitlePanel extends JPanel {
 		rdbtnUnCheckedItems.setSelected(true);
 		rdbtnUnCheckedItems.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
-				String keyword = textFieldSearch.getText().trim();
-				titleTable.search(keyword);
-				//lineTable.getModel().unHideLines();
+				buttonSearch.doClick();
 			}
 		});
 		buttonPanel.add(rdbtnUnCheckedItems);
@@ -334,9 +336,7 @@ public class TitlePanel extends JPanel {
 		rdbtnCheckingItems.setSelected(true);
 		rdbtnCheckingItems.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
-				String keyword = textFieldSearch.getText().trim();
-				titleTable.search(keyword);
-				//lineTable.getModel().unHideLines();
+				buttonSearch.doClick();
 			}
 		});
 		buttonPanel.add(rdbtnCheckingItems);
@@ -345,12 +345,19 @@ public class TitlePanel extends JPanel {
 		rdbtnCheckedItems.setSelected(false);
 		rdbtnCheckedItems.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
-				String keyword = textFieldSearch.getText().trim();
-				titleTable.search(keyword);
-				//lineTable.getModel().unHideLines();
+				buttonSearch.doClick();
 			}
 		});
 		buttonPanel.add(rdbtnCheckedItems);
+
+		rdbtnMoreActionItems = new JRadioButton(LineEntry.CheckStatus_MoreAction);
+		rdbtnMoreActionItems.setSelected(false);
+		rdbtnMoreActionItems.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				buttonSearch.doClick();
+			}
+		});
+		buttonPanel.add(rdbtnMoreActionItems);
 
 		lblSummaryOfTitle = new JLabel("^_^");
 		buttonPanel.add(lblSummaryOfTitle);
@@ -367,9 +374,12 @@ public class TitlePanel extends JPanel {
 		DomainPanel.backupDB();
 
 		Set<String> domains = new HashSet<>();//新建一个对象，直接赋值后的删除操作，实质是对domainResult的操作。
+
+		//将新发现的域名也移动到子域名集合中，以便跑一次全量。 ---DomainConsumer.QueueToResult()中的逻辑已经保证了SubDomainSet一直是最全的。
 		domains.addAll(DomainPanel.getDomainResult().getSubDomainSet());
-		//remove domains in black list
-		domains.removeAll(DomainPanel.getDomainResult().getBlackDomainSet());
+		domains.addAll(Commons.toIPSet(DomainPanel.getDomainResult().getSubnetSet()));//确定的IP网段，用户自己输入的
+		//remove domains in black list that is not our target
+		//domains.removeAll(DomainPanel.getDomainResult().fetchNotTargetIPList());//无需移除，会标记出来的。
 
 		//backup to history
 		BackupLineEntries = titleTableModel.getLineEntries();
@@ -420,13 +430,14 @@ public class TitlePanel extends JPanel {
 		Set<String> domains = new HashSet<>();//新建一个对象，直接赋值后的删除操作，实质是对domainResult的操作。
 		domains.addAll(DomainPanel.getDomainResult().getNewAndNotGetTitleDomainSet());
 		//remove domains in black list
-		domains.removeAll(DomainPanel.getDomainResult().getBlackDomainSet());
+		//domains.removeAll(DomainPanel.getDomainResult().fetchNotTargetIPList());//无需移除，会标记出来的。
 
 		if (threadGetTitle != null){
 			threadGetTitle.interrupt();
 		}
 		threadGetTitle = new ThreadGetTitleWithForceStop(domains,tempConfig.getThreadNumber());
 		threadGetTitle.start();
+		//清空新发现域名集合前，应该都添加到子域名集合中！！！---DomainConsumer.QueueToResult()中的逻辑已经保证了SubDomainSet一直是最全的。
 		DomainPanel.getDomainResult().getNewAndNotGetTitleDomainSet().clear();
 	}
 
@@ -434,11 +445,12 @@ public class TitlePanel extends JPanel {
 	public String getSubnet(boolean isCurrent,boolean justPulic){
 		//stdout.println(" "+isCurrent+justPulic);
 		Set<String> subnets;
-		if (isCurrent) {//获取的是现有可成功连接的IP集合
+		if (isCurrent) {//获取的是现有可成功连接的IP集合+用户指定的IP网段集合
 			subnets = titleTableModel.GetSubnets();
 		}else {//重新解析所有域名的IP
 			Set<String> IPsOfDomain = new ThreadGetSubnet(DomainPanel.getDomainResult().getSubDomainSet()).Do();
-			//Set<String> CSubNetIPs = Commons.subNetsToIPSet(Commons.toSubNets(IPsOfDomain));
+			Set<String> IPsOfcertainSubnets = Commons.toIPSet(DomainPanel.getDomainResult().getSubnetSet());//用户配置的确定IP+网段
+			IPsOfDomain.addAll(IPsOfcertainSubnets);
 			subnets = Commons.toSmallerSubNets(IPsOfDomain);
 		}
 
@@ -453,8 +465,9 @@ public class TitlePanel extends JPanel {
 				}
 			}
 		}
-
-		return String.join(System.lineSeparator(), result);
+		List<String> tmplist= new ArrayList<>(result);
+		Collections.sort(tmplist);
+		return String.join(System.lineSeparator(), tmplist);
 	}
 
 	/*

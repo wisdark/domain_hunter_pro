@@ -1,6 +1,17 @@
 package title;
 
-import java.awt.Toolkit;
+import GUI.GUI;
+import GUI.LineEntryMenuForBurp;
+import Tools.ToolPanel;
+import burp.BurpExtender;
+import burp.Commons;
+import burp.Getter;
+import burp.IBurpExtenderCallbacks;
+import domain.DomainPanel;
+import title.search.SearchDork;
+
+import javax.swing.*;
+import java.awt.*;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
@@ -10,21 +21,6 @@ import java.net.URL;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
-import javax.swing.AbstractAction;
-import javax.swing.JMenu;
-import javax.swing.JMenuItem;
-import javax.swing.JOptionPane;
-import javax.swing.JPopupMenu;
-import javax.swing.SwingWorker;
-
-import GUI.LineEntryMenuForBurp;
-import Tools.ToolPanel;
-import burp.BurpExtender;
-import burp.Commons;
-import burp.Getter;
-import burp.IBurpExtenderCallbacks;
-import title.search.SearchDork;
 
 public class LineEntryMenu extends JPopupMenu {
 
@@ -192,7 +188,7 @@ public class LineEntryMenu extends JPopupMenu {
 					TitlePanel.getTextFieldSearch().setText(length+"");
 				}else if (columnName.equalsIgnoreCase("title")){
 					String title = firstEntry.getTitle();
-					TitlePanel.getTextFieldSearch().setText(title);
+					TitlePanel.getTextFieldSearch().setText(SearchDork.TITLE.toString()+":"+title);
 				}else if (columnName.equalsIgnoreCase("comments")){
 					String comment = firstEntry.getComment();
 					TitlePanel.getTextFieldSearch().setText(SearchDork.COMMENT.toString()+":"+comment);
@@ -251,6 +247,24 @@ public class LineEntryMenu extends JPopupMenu {
 			public void actionPerformed(ActionEvent actionEvent) {
 				try{
 					java.util.List<String> urls = lineTable.getModel().getURLs(rows);
+					String textUrls = String.join(System.lineSeparator(), urls);
+
+					Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+					StringSelection selection = new StringSelection(textUrls);
+					clipboard.setContents(selection, null);
+				}
+				catch (Exception e1)
+				{
+					e1.printStackTrace(stderr);
+				}
+			}
+		});
+		
+		JMenuItem copyCommonURLItem = new JMenuItem(new AbstractAction("Copy URL With Common Formate") {
+			@Override
+			public void actionPerformed(ActionEvent actionEvent) {
+				try{
+					java.util.List<String> urls = lineTable.getModel().getCommonURLs(rows);
 					String textUrls = String.join(System.lineSeparator(), urls);
 
 					Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
@@ -361,6 +375,23 @@ public class LineEntryMenu extends JPopupMenu {
 			}
 		});
 
+		JMenuItem moreActionItem = new JMenuItem(new AbstractAction("Need More Action") {//checking
+			@Override
+			public void actionPerformed(ActionEvent actionEvent) {
+				TitlePanel.getTitleTableModel().updateRowsStatus(rows,LineEntry.CheckStatus_Checking);			
+				java.util.List<String> urls = lineTable.getModel().getURLs(rows);
+				IBurpExtenderCallbacks callbacks = BurpExtender.getCallbacks();
+				for(String url:urls) {
+					URL shortUrl;
+					try {
+						shortUrl = new URL(url);
+						callbacks.includeInScope(shortUrl);
+					} catch (MalformedURLException e) {
+						e.printStackTrace();
+					}
+				}
+			}
+		});
 
 		JMenuItem checkedItem = new JMenuItem(new AbstractAction("Check Done") {
 			@Override
@@ -375,8 +406,8 @@ public class LineEntryMenu extends JPopupMenu {
 		});
 
 
-		JMenu levelMenu = new JMenu("Set Level As");
-		LineEntryMenuForBurp.addLevelABC(levelMenu, lineTable, rows);
+		JMenu assetTypeMenu = new JMenu("Set Asset Type As");
+		LineEntryMenuForBurp.addLevelABC(assetTypeMenu, lineTable, rows);
 
 
 		JMenuItem batchAddCommentsItem = new JMenuItem(new AbstractAction("Add Comments") {
@@ -396,6 +427,24 @@ public class LineEntryMenu extends JPopupMenu {
 			public void actionPerformed(ActionEvent actionEvent) {
 				try{
 					List<String> urls = lineTable.getModel().getLocationUrls(rows);
+					String textUrls = String.join(System.lineSeparator(), urls);
+
+					Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+					StringSelection selection = new StringSelection(textUrls);
+					clipboard.setContents(selection, null);
+				}
+				catch (Exception e1)
+				{
+					e1.printStackTrace(stderr);
+				}
+			}
+		});
+		
+		JMenuItem copyCDNAndCertInfoItem = new JMenuItem(new AbstractAction("Copy CDN|CertInfo") {
+			@Override
+			public void actionPerformed(ActionEvent actionEvent) {
+				try{
+					List<String> urls = lineTable.getModel().getCDNAndCertInfos(rows);
 					String textUrls = String.join(System.lineSeparator(), urls);
 
 					Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
@@ -496,7 +545,8 @@ public class LineEntryMenu extends JPopupMenu {
 			}
 		});
 
-		JMenuItem removeItem = new JMenuItem(new AbstractAction("Delete") {//need to show dialog to confirm
+		//单纯从title记录中删除
+		JMenuItem removeItem = new JMenuItem(new AbstractAction("Delete This Entry") {//need to show dialog to confirm
 			@Override
 			public void actionPerformed(ActionEvent actionEvent) {
 				int result = JOptionPane.showConfirmDialog(null,"Are you sure to DELETE these items ?");
@@ -505,55 +555,65 @@ public class LineEntryMenu extends JPopupMenu {
 				}else {
 					return;
 				}
-				BurpExtender.getGui().titlePanel.digStatus();
+				GUI.titlePanel.digStatus();
 			}
 		});
-
-		JMenuItem blackListItem = new JMenuItem(new AbstractAction("Add Domain To Black List And Delete") {//need to show dialog to confirm
+		
+		//单纯从title记录中删除
+		JMenuItem removeSubDomainItem = new JMenuItem(new AbstractAction("Delete Host From SubDomainSet") {//need to show dialog to confirm
 			@Override
 			public void actionPerformed(ActionEvent actionEvent) {
-				int result = JOptionPane.showConfirmDialog(null,"Are you sure to DELETE these items and Add To BLACK LIST ?");
+				int result = JOptionPane.showConfirmDialog(null,"Are you sure to DELETE these Hosts from SubDomainSet ?");
 				if (result == JOptionPane.YES_OPTION) {
-					lineTable.getModel().addBlackList(rows);
+					//java.util.List<String> hosts = lineTable.getModel().getHosts(rows);//不包含端口，如果原始记录包含端口就删不掉
+					//如果有 domain domain:8888 两个记录，这种方式就会删错对象
+					java.util.List<String> hostAndPort = lineTable.getModel().getHostsAndPorts(rows);//包含端口，如果原始记录
+					for(String item:hostAndPort) {
+						if (!DomainPanel.domainResult.getSubDomainSet().remove(item)) {
+							DomainPanel.domainResult.getSubDomainSet().remove(item.split(":")[0]);
+						}
+					}
 				}else {
 					return;
 				}
-				BurpExtender.getGui().titlePanel.digStatus();
+				GUI.titlePanel.digStatus();
 			}
 		});
-		blackListItem.setToolTipText("will not get title from next time");
 
-		JMenuItem IpBlackListItem = new JMenuItem(new AbstractAction("Add IP To Black List") {//need to show dialog to confirm
+		//认为资产不是目标资产，加入NotTargeIPSet
+		JMenuItem addToblackListItem = new JMenuItem(new AbstractAction("Add Host To NotTargeIPSet") {//need to show dialog to confirm
 			@Override
 			public void actionPerformed(ActionEvent actionEvent) {
-				int result = JOptionPane.showConfirmDialog(null,"Are you sure to add these IP items To BLACK LIST ?");
+				int result = JOptionPane.showConfirmDialog(null,"Are you sure to ADD Host(Must Be IP) to NotTargetIPSet ?");
 				if (result == JOptionPane.YES_OPTION) {
-					lineTable.getModel().addIPBlackList(rows);
+					lineTable.getModel().addHostToNotTargetIPSet(rows);
+				}else {
+					return;
+				}
+				GUI.titlePanel.digStatus();
+			}
+		});
+		addToblackListItem.setToolTipText("If host is IP address,will be added to NotTargetIPSet");
+
+		JMenuItem removeFromBlackListItem = new JMenuItem(new AbstractAction("Remove Host From NotTargeIPSet") {//need to show dialog to confirm
+			@Override
+			public void actionPerformed(ActionEvent actionEvent) {
+				int result = JOptionPane.showConfirmDialog(null,"Are you sure to REMOVE these Host(Must Be IP) from NotTargetIPSet ?");
+				if (result == JOptionPane.YES_OPTION) {
+					lineTable.getModel().removeHostFromNotTargetIPSet(rows);
 				}else {
 					return;
 				}
 			}
 		});
-		IpBlackListItem.setToolTipText("will not get title from next time");
-
-		JMenuItem SubnetBlackListItem = new JMenuItem(new AbstractAction("Add C Subnet To Black List") {//need to show dialog to confirm
-			@Override
-			public void actionPerformed(ActionEvent actionEvent) {
-				int result = JOptionPane.showConfirmDialog(null,"Are you sure to add these subnets To BLACK LIST ?");
-				if (result == JOptionPane.YES_OPTION) {
-					lineTable.getModel().addSubnetBlackList(rows);
-				}else {
-					return;
-				}
-			}
-		});
-		SubnetBlackListItem.setToolTipText("will not get title from next time");
+		removeFromBlackListItem.setToolTipText("If host is IP address,will be removed from NotTargetIPSet");
 
 
 		this.add(itemNumber);
 		this.add(checkingItem);
+		this.add(moreActionItem);
 		this.add(checkedItem);
-		this.add(levelMenu);
+		this.add(assetTypeMenu);
 		this.add(batchAddCommentsItem);
 
 		this.addSeparator();
@@ -576,17 +636,17 @@ public class LineEntryMenu extends JPopupMenu {
 		this.add(copyHostItem);
 		this.add(copyHostAndPortItem);
 		this.add(copyURLItem);
+		this.add(copyCommonURLItem);
 		this.add(copyLocationURLItem);
+		this.add(copyCDNAndCertInfoItem);
 		this.add(SendToRepeater);
 		this.add(SendToRepeaterWithCookieItem);
 
 		this.addSeparator();
 
 		this.add(removeItem);
-		this.add(blackListItem);
-		this.add(IpBlackListItem);
-		this.add(SubnetBlackListItem);
-
+		this.add(removeSubDomainItem);
+		this.add(addToblackListItem);
+		this.add(removeFromBlackListItem);
 	}
-
 }

@@ -9,6 +9,7 @@ public enum SearchDork {
 	REQUEST("REQUEST"),
 	RESPONSE("RESPONSE"),
 	COMMENT("COMMENT"),
+	TITLE("TITLE"),
 
 	REGEX("REGEX");//这个用于正则搜索
 
@@ -18,11 +19,15 @@ public enum SearchDork {
 	SearchDork(String dork){
 		this.dork = dork;
 	}
-
+	/**
+	 * 判断是否是dork搜索语句,未区分大小写,即HOST: host:是同样效果
+	 * @param input
+	 * @return
+	 */
 	public static boolean isDork(String input) {
 		SearchDork[] values = SearchDork.values();
 		for (SearchDork value:values) {
-			if (value.toString().equalsIgnoreCase(input)) {
+			if (input.toLowerCase().startsWith(value.toString().toLowerCase()+":")) {
 				return true;
 			}
 		}
@@ -52,8 +57,18 @@ public enum SearchDork {
 			return false;
 		}
 	}
+	public static String  inputClean(String input){
+		if (input.contains("\"") || input.contains("\'")){
+			//为了处理输入是"dork:12345"的情况，下面的这种写法其实不严谨，中间也可能有引号，不过应付一般的搜索足够了。
+			input = input.replaceAll("\"", "");
+			input = input.replaceAll("\'", "");
+		}
+		return input;
+	}
 
 	public static String grepDork(String input) {
+
+		input = inputClean(input);
 
 		String[] arr = input.split(":",2);//limit =2 分割成2份
 		if (arr.length ==2) {
@@ -65,6 +80,7 @@ public enum SearchDork {
 	}
 
 	public static String grepKeyword(String input) {
+		input = inputClean(input);
 
 		String[] arr = input.split(":",2);//limit =2 分割成2份
 		if (arr.length ==2) {
