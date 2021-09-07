@@ -17,7 +17,9 @@ import GUI.GUI;
 import burp.BurpExtender;
 import burp.Commons;
 import burp.DBHelper;
+import burp.Getter;
 import burp.IExtensionHelpers;
+import burp.IHttpRequestResponse;
 import burp.IHttpService;
 import burp.IMessageEditorController;
 import burp.IntArraySlice;
@@ -52,7 +54,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 	PrintWriter stderr;
 
 	private static final String[] standardTitles = new String[] {
-			"#", "URL", "Status", "Length", "Title","Comments","Server","isChecked","AssetType","Time","IP", "CDN|CertInfo"};
+			"#", "URL", "Status", "Length", "Title","Comments","Server","isChecked","AssetType","CheckDoneTime","IP", "CDN|CertInfo", "IconHash"};
 	private static List<String> titletList = new ArrayList<>(Arrays.asList(standardTitles));
 	//为了实现动态表结构
 	public static List<String> getTitletList() {
@@ -105,7 +107,8 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 						List<LineEntry> entries = new ArrayList<LineEntry>();
 						for (int i = rowstart; i <= rowend; i++) {
 							LineEntry entry = lineEntries.getValueAtIndex(i);
-							entry.setTime(Commons.getNowTimeString());
+							//entry.setTime(Commons.getNowTimeString());
+							//这里不再更新时间，时间只表示CheckDone的时间
 							entries.add(entry);
 						}
 						dbHelper.updateTitles(entries);
@@ -281,7 +284,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 		if (columnIndex == titletList.indexOf("Comments")){
 			return entry.getComment();
 		}
-		if (columnIndex == titletList.indexOf("Time")){
+		if (columnIndex == titletList.indexOf("CheckDoneTime")){
 			return entry.getTime();
 		}
 		if (columnIndex == titletList.indexOf("isChecked")){
@@ -289,6 +292,9 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 		}
 		if (columnIndex == titletList.indexOf("AssetType")){
 			return entry.getAssetType();
+		}
+		if (columnIndex == titletList.indexOf("IconHash")){
+			return entry.getIcon_hash();
 		}
 		return "";
 	}
@@ -445,6 +451,18 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 		}
 	}
 
+	public Set<String> getIPs(int[] rows) {
+		synchronized (lineEntries) {
+			Arrays.sort(rows); //升序
+			Set<String> Result = new HashSet<>();
+
+			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
+				Set<String> IPs = lineEntries.getValueAtIndex(rows[i]).fetchIPSet();
+				Result.addAll(IPs);
+			}
+			return Result;
+		}
+	}
 
 	public List<String> getURLs(int[] rows) {
 		synchronized (lineEntries) {
@@ -502,6 +520,20 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			return results;
 		}
 	}
+	
+	public List<String> getIconHashes(int[] rows) {
+		synchronized (lineEntries) {
+			Arrays.sort(rows); //升序
+			List<String> results = new ArrayList<>();
+
+			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
+				LineEntry entry = lineEntries.getValueAtIndex(rows[i]);
+				String hash = entry.getIcon_hash();
+				results.add(hash);
+			}
+			return results;
+		}
+	}
 
 	public int[] getIndexes(List<LineEntry> entries) {
 		int[] indexes = new int[entries.size()];
@@ -548,6 +580,9 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
 				LineEntry checked = lineEntries.getValueAtIndex(rows[i]);
 				checked.setCheckStatus(status);
+				if (status.equalsIgnoreCase(LineEntry.CheckStatus_Checked)) {
+					checked.setTime(Commons.getNowTimeString());
+				}
 				//				lineEntries.remove(rows[i]);
 				//				lineEntries.add(rows[i], checked);
 				//				//https://stackoverflow.com/questions/4352885/how-do-i-update-the-element-at-a-certain-position-in-an-arraylist
@@ -673,6 +708,22 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 
 
 	///////////////////多个行内容的增删查改/////////////////////////////////
+	
+	/**
+	 * 仅用于runner中，某个特殊场景:URL相同host不同的情况
+	 * @param lineEntry
+	 */
+	public void addNewLineEntryWithTime(LineEntry lineEntry){
+		if (lineEntry == null) {
+			return;
+		}
+		synchronized (lineEntries) {
+			String key = lineEntry.getUrl()+System.currentTimeMillis();
+			lineEntries.put(key,lineEntry);
+			int index = lineEntries.IndexOfKey(key);
+			fireTableRowsInserted(index, index);
+		}
+	}
 
 	public void addNewLineEntry(LineEntry lineEntry){
 		if (lineEntry == null) {
@@ -711,6 +762,26 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 		//统一URL字符串的格式
 		url = Commons.formateURLString(url);
 		return lineEntries.get(url);
+	}
+	
+	/**
+	 * 根据一个IHttpRequestResponse对象来查找对应的LineEntry记录
+	 * 首先根据完整URL进行查找，如果没有找到，就使用baseURL进行查找。
+	 * @param message
+	 * @return
+	 */
+	public LineEntry findLineEntryByMessage(IHttpRequestResponse message) {
+		IExtensionHelpers helpers = BurpExtender.getCallbacks().getHelpers();
+		Getter getter = new Getter(helpers);
+		URL fullurl = getter.getFullURL(message);
+		LineEntry entry = TitlePanel.getTitleTableModel().findLineEntry(fullurl.toString());
+		if (entry == null) {
+			URL shortUrl = getter.getShortURL(message);
+			if(!fullurl.equals(shortUrl)) {
+				entry = TitlePanel.getTitleTableModel().findLineEntry(shortUrl.toString());
+			}
+		}
+		return entry;
 	}
 
 	/*

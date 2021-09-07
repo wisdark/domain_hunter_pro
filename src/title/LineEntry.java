@@ -19,6 +19,7 @@ import com.ibm.icu.text.CharsetMatch;
 
 import burp.BurpExtender;
 import burp.Getter;
+import burp.HelperPlus;
 import burp.IBurpExtenderCallbacks;
 import burp.IExtensionHelpers;
 import burp.IHttpRequestResponse;
@@ -49,6 +50,9 @@ public class LineEntry {
 
 	public static final String NotTargetBaseOnCertInfo = "NotTargetBaseOnCertInfo";
 	public static final String NotTargetBaseOnBlackList = "NotTargetBaseOnBlackList";
+	
+	public static final String EntryType_Web = "Web";
+	public static final String EntryType_DNS = "DNS";
 
 	public static String systemCharSet = getSystemCharSet();
 
@@ -70,6 +74,7 @@ public class LineEntry {
 	private String CDN = "";
 	private String webcontainer = "";
 	private String time = "";
+	private String icon_hash = "";
 
 	//Gson中，加了transient表示不序列化，是最简单的方法
 	//给不想被序列化的属性增加transient属性---java特性
@@ -81,6 +86,7 @@ public class LineEntry {
 	private transient boolean isChecked =false;
 	private String CheckStatus =CheckStatus_UnChecked;
 	private String AssetType = AssetType_C;
+	private String EntryType = EntryType_Web;
 	private String comment ="";
 	private boolean isManualSaved = false;
 
@@ -91,10 +97,19 @@ public class LineEntry {
 	private transient IExtensionHelpers helpers;
 	private transient IBurpExtenderCallbacks callbacks;
 
+	/**
+	 * 默认构造函数，序列化、反序列化所需
+	 */
 	LineEntry(){
 
 	}
 
+	/**
+	 * 用于构造DNS记录
+	 * @param isRequest
+	 * @param requestOrResponse
+	 * @return
+	 */
 	public LineEntry(String host,Set<String> IPset) {
 		this.host = host;
 		this.port = 80;
@@ -103,6 +118,7 @@ public class LineEntry {
 		if (this.IP != null) {
 			this.IP = IPset.toString().replace("[", "").replace("]", "");
 		}
+		this.EntryType = EntryType_DNS;
 	}
 
 	public LineEntry(IHttpRequestResponse messageinfo) {
@@ -200,7 +216,18 @@ public class LineEntry {
 	public void DoDirBrute() {
 
 	}
+	
+	public void DoGetIconHash() {
+		if (EntryType == EntryType_Web) {
+			String tmpurl =getUrl(); 
+			this.setIcon_hash(WebIcon.getHash(tmpurl));
+		}
+	}
 
+	/**
+	 * 获取到的URL是包含了默认端口的，因为burp方法的原因
+	 * @return
+	 */
 	public String getUrl() {//为了格式统一，和查找匹配更精确，都包含了默认端口
 		if (url == null || url.equals("")) {
 			return protocol+"://"+host+":"+port+"/";
@@ -208,15 +235,18 @@ public class LineEntry {
 		return url;
 	}
 
-	//返回通常意义上的URL格式，不包含默认端口。用于搜索
+	/**
+	 * 返回通常意义上的URL格式，不包含默认端口。用于搜索
+	 * 不要修改原始url的格式！即都包含默认端口。因为数据库中更新对应记录是以URL为依据的，否则不能成功更新记录。
+	 * @return
+	 */
 	public String fetchUrlWithCommonFormate() {
-		String result = protocol+"://"+host;
-		if ((protocol.equalsIgnoreCase("http") && port == 80)
-			|| (protocol.equalsIgnoreCase("https") && port ==443)) {
-			return result+"/";
-		}else {
-			return result+":"+port+"/";
+		if (url == null || url.equals("")) {
+			url = protocol+"://"+host+":"+port+"/";
 		}
+		//不要修改原始url的格式！即都包含默认端口。因为数据库中更新对应记录是以URL为依据的，否则不能成功更新记录。
+		String usualUrl = HelperPlus.removeDefaultPort(url);
+		return usualUrl;
 	}
 
 	public void setUrl(String url) {
@@ -301,6 +331,14 @@ public class LineEntry {
 		this.time = time;
 	}
 
+
+	public String getIcon_hash() {
+		return icon_hash;
+	}
+
+	public void setIcon_hash(String icon_hash) {
+		this.icon_hash = icon_hash;
+	}
 
 	public IHttpRequestResponse getMessageinfo() {
 		//		if (messageinfo == null){
@@ -533,6 +571,14 @@ Content-Type: text/html;charset=UTF-8
 		if (Arrays.asList(AssetTypeArray).contains(AssetType)) {
 			this.AssetType = AssetType;
 		}
+	}
+
+	public String getEntryType() {
+		return EntryType;
+	}
+
+	public void setEntryType(String entryType) {
+		EntryType = entryType;
 	}
 
 	public String getComment() {

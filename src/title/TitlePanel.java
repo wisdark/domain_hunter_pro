@@ -307,12 +307,11 @@ public class TitlePanel extends JPanel {
 			}
 		});
 		buttonPanel.add(btnStop);
-
-		textFieldSearch = new SearchTextField("");
+		
+		JButton buttonSearch = new JButton("Search");
+		textFieldSearch = new SearchTextField("",buttonSearch);
 		buttonPanel.add(textFieldSearch);
 
-
-		JButton buttonSearch = new JButton("Search");
 		buttonSearch.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				String keyword = textFieldSearch.getText();
@@ -370,7 +369,7 @@ public class TitlePanel extends JPanel {
 	 * 根据所有已知域名获取title
 	 */
 	public void getAllTitle(){
-		tempConfig = new GetTitleTempConfig();
+
 		DomainPanel.backupDB();
 
 		Set<String> domains = new HashSet<>();//新建一个对象，直接赋值后的删除操作，实质是对domainResult的操作。
@@ -380,7 +379,10 @@ public class TitlePanel extends JPanel {
 		domains.addAll(Commons.toIPSet(DomainPanel.getDomainResult().getSubnetSet()));//确定的IP网段，用户自己输入的
 		//remove domains in black list that is not our target
 		//domains.removeAll(DomainPanel.getDomainResult().fetchNotTargetIPList());//无需移除，会标记出来的。
-
+		tempConfig = new GetTitleTempConfig(domains.size());
+		if (tempConfig.getThreadNumber() <=0) {
+			return;
+		}
 		//backup to history
 		BackupLineEntries = titleTableModel.getLineEntries();
 		//clear tableModel
@@ -397,11 +399,16 @@ public class TitlePanel extends JPanel {
 
 
 	public void getExtendTitle(){
-		tempConfig = new GetTitleTempConfig();
 		DomainPanel.backupDB();
 
 		Set<String> extendIPSet = titleTableModel.GetExtendIPSet();
 		stdout.println(extendIPSet.size()+" extend IP Address founded"+extendIPSet);
+		
+		tempConfig = new GetTitleTempConfig(extendIPSet.size());
+		if (tempConfig.getThreadNumber() <=0) {
+			return;
+		}
+		
 		if (threadGetTitle != null){
 			threadGetTitle.interrupt();
 		}
@@ -423,15 +430,17 @@ public class TitlePanel extends JPanel {
 	 * 获取新发现域名的title
 	 */
 	public void getTitleOfNewDomain(){
-
-		tempConfig = new GetTitleTempConfig();
 		DomainPanel.backupDB();
 
 		Set<String> domains = new HashSet<>();//新建一个对象，直接赋值后的删除操作，实质是对domainResult的操作。
 		domains.addAll(DomainPanel.getDomainResult().getNewAndNotGetTitleDomainSet());
 		//remove domains in black list
 		//domains.removeAll(DomainPanel.getDomainResult().fetchNotTargetIPList());//无需移除，会标记出来的。
-
+		tempConfig = new GetTitleTempConfig(domains.size());
+		if (tempConfig.getThreadNumber() <=0) {
+			return;
+		}
+		
 		if (threadGetTitle != null){
 			threadGetTitle.interrupt();
 		}

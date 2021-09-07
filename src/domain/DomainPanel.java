@@ -62,6 +62,7 @@ public class DomainPanel extends JPanel {
 
     private SortOrder sortedMethod;
     private JTable table;
+    public static JPanel HeaderPanel;
 
     private boolean listenerIsOn = true;
     private static final Logger log = LogManager.getLogger(DomainPanel.class);
@@ -73,8 +74,9 @@ public class DomainPanel extends JPanel {
     public static void setDomainResult(DomainManager domainResult) {
         DomainPanel.domainResult = domainResult;
     }
-
-    public static DomainManager domainResult = null;//getter setter
+    
+    //流量分析进程需要用到这个变量，标记为volatile以获取正确的值。
+    public volatile static DomainManager domainResult = null;//getter setter
     public static DefaultTableModel domainTableModel;
     PrintWriter stdout;
     PrintWriter stderr;
@@ -96,11 +98,10 @@ public class DomainPanel extends JPanel {
         ///////////////////////HeaderPanel//////////////
 
 
-        JPanel HeaderPanel = new JPanel();
+        HeaderPanel = new JPanel();
         FlowLayout fl_HeaderPanel = (FlowLayout) HeaderPanel.getLayout();
         fl_HeaderPanel.setAlignment(FlowLayout.LEFT);
         this.add(HeaderPanel, BorderLayout.NORTH);
-
 
         JButton btnSaveDomainOnly = new JButton("SaveDomainOnly");
         btnSaveDomainOnly.setToolTipText("Only save data in Domain Panel");
@@ -277,8 +278,12 @@ public class DomainPanel extends JPanel {
             }
         });
         HeaderPanel.add(btnZoneTransferCheck);
-
+        
+        /**
+         * 从文本文件中导入域名
+         */
         JButton btnImportDomain = new JButton("Import Domain");
+        btnImportDomain.setToolTipText("Import Domain From Text File Which One Domain Per Line");
         btnImportDomain.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
                 JFileChooser fc = new JFileChooser();

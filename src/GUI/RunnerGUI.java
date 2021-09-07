@@ -155,15 +155,15 @@ public class RunnerGUI extends JFrame {
 		RunnerPanel.add(buttonPanel,BorderLayout.NORTH);
 
 		//搜索框
-		SearchTextField textFieldSearch = new SearchTextField("");
+		JButton buttonSearch = new JButton("Search");
+		SearchTextField textFieldSearch = new SearchTextField("",buttonSearch);
 		buttonPanel.add(textFieldSearch);
 
 		//搜索按钮
-		JButton buttonSearch = new JButton("Search");
 		buttonSearch.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				String keyword = textFieldSearch.getText();
-				runnerTable.search(keyword);
+				runnerTable.search(keyword,false);
 			}
 		});
 		buttonPanel.add(buttonSearch);
@@ -185,7 +185,12 @@ public class RunnerGUI extends JFrame {
 			@Override
 			public void windowClosing(WindowEvent e) {
 				// TODO 关闭多线程
-				runnerTableModel.clear(false);
+				try{
+					runnerTableModel.clear(false);
+				}catch (Exception e1){
+					e1.printStackTrace();
+				}
+
 				if (runner !=null) {
 					runner.stopThreads();
 				}
@@ -232,7 +237,12 @@ public class RunnerGUI extends JFrame {
 
 	public void begainRun() {
 		runner = new ThreadRunner(this,messageInfo);
-		runner.Do();
+		runner.start();
+	}
+	
+	public void begainRunChangeHostInHeader() {
+		runner = new ThreadRunner(this,messageInfo,ThreadRunner.ChangeHostInHeader);
+		runner.start();
 	}
 
 	public void begainDirBrute() {

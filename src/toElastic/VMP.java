@@ -2,6 +2,7 @@ package toElastic;
 
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.Set;
 
 import com.github.kevinsawicki.http.HttpRequest;
 
@@ -25,12 +26,11 @@ public class VMP {
 			String url = entry.getUrl();
 			String host = entry.getHost();
 			String title = entry.getTitle();
-
+			String IPStr = entry.getIP();
+			String header = entry.getHeaderValueOf(false, "Server");
 			if (!Commons.isValidIP(host)) {
-				VMPEntry tmp = new VMPEntry(url,title);
-				result.put(url,tmp);
-				//tmp = new VMPEntry(host,title);
-				//result.put(host,tmp);
+				VMPEntry tmp = new VMPEntry(url,title,IPStr,header);
+				result.put(url,tmp);//去重
 			}
 		}
 		return result.values();

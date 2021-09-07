@@ -1,26 +1,20 @@
 package title;
 
-import java.awt.*;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Desktop;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.event.MouseMotionAdapter;
 import java.io.PrintWriter;
 import java.net.URI;
-import java.util.Arrays;
-import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
-import javax.swing.JScrollPane;
-import javax.swing.JSplitPane;
-import javax.swing.JTabbedPane;
-import javax.swing.JTable;
-import javax.swing.RowFilter;
-import javax.swing.SwingUtilities;
-import javax.swing.ToolTipManager;
+import javax.swing.*;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.JTableHeader;
 import javax.swing.table.TableColumn;
@@ -43,7 +37,7 @@ public class LineTable extends JTable
 	 */
 	private static final long serialVersionUID = 1L;
 	private LineTableModel lineTableModel;
-	private TableRowSorter<LineTableModel> rowSorter;//TableRowSorter vs. RowSorter
+	private TableRowSorter<LineTableModel> tableRowSorter;//TableRowSorter vs. RowSorter
 
 	private IMessageEditor requestViewer;
 	private IMessageEditor responseViewer;
@@ -94,8 +88,12 @@ public class LineTable extends JTable
 		this.setModel(lineTableModel);
 
 		tableinit();
+		tableRowSorter = new TableRowSorter<LineTableModel>(lineTableModel);
+		setRowSorter(tableRowSorter);
+		//addClickSort();
 		//FitTableColumns(this);
-		addClickSort();
+		//this.setAutoCreateRowSorter(true);
+
 		registerListeners();
 
 		tableAndDetailSplitPane = tableAndDetailPanel();
@@ -167,11 +165,12 @@ public class LineTable extends JTable
 		preferredWidths.put("Length",10);
 		preferredWidths.put("Title",30);
 		preferredWidths.put("Comments",30);
-		preferredWidths.put("Time","2019-05-28-14-13-16".length());
+		preferredWidths.put("CheckDoneTime","2019-05-28-14-13-16".length());
 		preferredWidths.put("isChecked"," isChecked ".length());
 		preferredWidths.put("IP",30);
 		preferredWidths.put("CDN|CertInfo",30);
 		preferredWidths.put("Server",10);
+		preferredWidths.put("IconHash", "-17480088888".length());
 		for(String header:LineTableModel.getTitletList()){
 			try{//避免动态删除表字段时，出错
 				int multiNumber = preferredWidths.get(header);
@@ -232,18 +231,24 @@ public class LineTable extends JTable
 		}
 	}
 
+	@Deprecated //还是没能解决添加数据时排序报错的问题
 	public void addClickSort() {//双击header头进行排序
-
-		rowSorter = new TableRowSorter<LineTableModel>(lineTableModel);//排序和搜索
-		LineTable.this.setRowSorter(rowSorter);
+		tableRowSorter = new TableRowSorter<LineTableModel>(lineTableModel);
+		setRowSorter(tableRowSorter);
 
 		JTableHeader header = this.getTableHeader();
 		header.addMouseListener(new MouseAdapter() {
 			@Override
 			public void mouseClicked(MouseEvent e) {
 				try {
-					LineTable.this.getRowSorter().getSortKeys().get(0).getColumn();
-					////当Jtable中无数据时，jtable.getRowSorter()是nul
+					if (LineTable.this.getModel() != null) {////当Jtable中无数据时，jtable.getRowSorter()是nul
+						//https://bugs.openjdk.java.net/browse/JDK-6386900
+						//当model中还在添加数据时，如果进行排序，就会导致出错
+						int col = ((LineTable) e.getSource()).columnAtPoint(e.getPoint()); // 获得列位置
+						List<RowSorter.SortKey> keys = (List<RowSorter.SortKey>) LineTable.this.getRowSorter().getSortKeys();
+						keys.add(new RowSorter.SortKey(col, SortOrder.ASCENDING));
+						tableRowSorter.setSortKeys(keys);
+					}
 				} catch (Exception e1) {
 					e1.printStackTrace(stderr);
 				}
@@ -253,7 +258,7 @@ public class LineTable extends JTable
 
 	/**
 	 * 搜索功能，自动获取caseSensitive的值
-	 * @param Inputkeyword
+	 * @param keyword
 	 */
 	public void search(String keyword) {
 		SearchTextField searchTextField = (SearchTextField)TitlePanel.getTextFieldSearch();
@@ -263,7 +268,6 @@ public class LineTable extends JTable
 
 	/**
 	 * 搜索功能
-	 * @param Inputkeyword
 	 * @param caseSensitive
 	 */
 	public void search(String Input,boolean caseSensitive) {
@@ -275,13 +279,28 @@ public class LineTable extends JTable
 			public boolean include(Entry entry) {
 				//entry --- a non-null object that wraps the underlying object from the model
 				int row = (int) entry.getIdentifier();
-				LineEntry line = rowSorter.getModel().getLineEntries().getValueAtIndex(row);
+				LineEntry line = LineTable.this.getModel().getLineEntries().getValueAtIndex(row);
 
 				//第一层判断，根据按钮状态进行判断，如果为true，进行后面的逻辑判断，false直接返回。
 				if (!LineSearch.entryNeedToShow(line)) {
 					return false;
 				}
-
+				//目前只处理&&（and）逻辑的表达式
+				if (Input.contains("&&")) {
+					String[] searchConditions = Input.split("&&");
+					for (String condition:searchConditions) {
+						if (oneCondition(condition,line)) {
+							continue;
+						}else {
+							return false;
+						}
+					}
+					return true;
+				}else {
+					return oneCondition(Input,line);
+				}
+			}
+			public boolean oneCondition(String Input,LineEntry line) {
 				if (SearchDork.isDork(Input)) {
 					//stdout.println("do dork search,dork:"+dork+"   keyword:"+keyword);
 					return LineSearch.dorkFilter(line,Input,caseSensitive);
@@ -290,7 +309,7 @@ public class LineTable extends JTable
 				}
 			}
 		};
-		rowSorter.setRowFilter(filter);
+		tableRowSorter.setRowFilter(filter);
 	}
 
 
@@ -324,6 +343,9 @@ public class LineTable extends JTable
 					}else if(modelCol==LineTableModel.getTitletList().indexOf("URL")) {//双击url在浏览器中打开
 						try{
 							String url = selecteEntry.getUrl();
+							if (url != null && !url.toLowerCase().startsWith("http://") && !url.toLowerCase().startsWith("https://")) {
+								url = "http://"+url;//针对DNS记录中URL字段是host的情况
+							}
 							Commons.browserOpen(url,ToolPanel.getLineConfig().getBrowserPath());
 						}catch (Exception e1){
 							e1.printStackTrace(stderr);
@@ -336,6 +358,9 @@ public class LineTable extends JTable
 							int index = tmpList.indexOf(currentStatus);
 							String newStatus = tmpList.get((index+1)%LineEntry.CheckStatusArray.length);
 							selecteEntry.setCheckStatus(newStatus);
+							if (newStatus.equalsIgnoreCase(LineEntry.CheckStatus_Checked)) {
+								selecteEntry.setTime(Commons.getNowTimeString());
+							}
 							stdout.println("$$$ "+selecteEntry.getUrl()+" status has been set to "+newStatus);
 							LineTable.this.lineTableModel.fireTableRowsUpdated(rows[0], rows[0]);
 						}catch (Exception e1){
@@ -370,9 +395,10 @@ public class LineTable extends JTable
 						//getSelectionModel().setSelectionInterval(rows[0], rows[1]);
 						int[] rows = getSelectedRows();
 						int col = ((LineTable) e.getSource()).columnAtPoint(e.getPoint()); // 获得列位置
+						int modelCol = LineTable.this.convertColumnIndexToModel(col);
 						if (rows.length>0){
-							rows = SelectedRowsToModelRows(getSelectedRows());
-							new LineEntryMenu(LineTable.this, rows, col).show(e.getComponent(), e.getX(), e.getY());
+							int[] modelRows = SelectedRowsToModelRows(rows);
+							new LineEntryMenu(LineTable.this, modelRows, modelCol).show(e.getComponent(), e.getX(), e.getY());
 						}else{//在table的空白处显示右键菜单
 							//https://stackoverflow.com/questions/8903040/right-click-mouselistener-on-whole-jtable-component
 							//new LineEntryMenu(_this).show(e.getComponent(), e.getX(), e.getY());

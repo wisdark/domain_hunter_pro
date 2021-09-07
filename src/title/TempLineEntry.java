@@ -208,6 +208,27 @@ public class TempLineEntry {
 		} catch (Exception e) {
 			e.printStackTrace(BurpExtender.getStderr());
 		}
+		
+		//设置Icon hash字段
+		for (LineEntry entry:resultSet){
+			String url = entry.getUrl();
+			String hash = WebIcon.getHash(url);
+			entry.setIcon_hash(hash);
+		}
+		
+		//当域名可以解析，但是所有URL请求都失败的情况下。添加一条DNS解析记录
+		//TODO 但是IP可以ping通但是无成功的web请求的情况还没有处理
+		if (resultSet.isEmpty()){
+			if (Commons.isValidDomain(host)&& !IPSet.isEmpty()) {
+				LineEntry entry = new LineEntry(host,IPSet);
+				entry.setUrl(host);//将host作为URL字段
+				entry.setTitle("DNS Record");
+				addInfoToEntry(entry);
+				resultSet.add(entry);
+				return resultSet;
+			}
+		}
+		
 		return resultSet;
 	}
 

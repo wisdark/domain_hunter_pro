@@ -333,12 +333,14 @@ public class DBHelper {
 				return true;
 			}else {
 				System.out.println("update titles failed");
+				stderr.println("update titles failed");
 				return false;
 			}
 		} catch(SQLiteException e) {
 			if (e.getErrorCode() == SQLiteErrorCode.SQLITE_BUSY.code) {
 				log.error("SQLITE_BUSY The database file is locked when call addTitles()");
 			}
+			e.printStackTrace();
 			e.printStackTrace(stderr);
 		} catch (Exception e) {
 			e.printStackTrace();

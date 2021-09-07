@@ -1,23 +1,27 @@
 package burp;
 
-import GUI.GUI;
-import GUI.LineEntryMenuForBurp;
-import Tools.ToolPanel;
-import bsh.This;
-import domain.DomainConsumer;
-import domain.DomainPanel;
-import domain.DomainProducer;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import title.TitlePanel;
-
-import javax.swing.*;
-import java.awt.*;
+import java.awt.Component;
 import java.io.PrintWriter;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+
+import javax.swing.JMenuItem;
+import javax.swing.SwingUtilities;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+import GUI.GUI;
+import GUI.LineEntryMenuForBurp;
+import GUI.ProjectMenu;
+import Tools.ToolPanel;
+import bsh.This;
+import domain.DomainConsumer;
+import domain.DomainPanel;
+import domain.DomainProducer;
+import title.TitlePanel;
 
 public class BurpExtender implements IBurpExtender, ITab, IExtensionStateListener,IContextMenuFactory,IHttpListener{
 	/**
@@ -33,7 +37,7 @@ public class BurpExtender implements IBurpExtender, ITab, IExtensionStateListene
 	private static String github = "https://github.com/bit4woo/domain_hunter_pro";
 	private static GUI gui;
 	public static final String Extension_Setting_Name_Line_Config = "domain-Hunter-pro-line-config";
-	public static final String Extension_Setting_Name_DB_File = "domain-Hunter-pro-db-file-path";
+	private static final String Extension_Setting_Name_DB_File = "DomainHunterProDbFilePath";
 
 	private static final Logger log=LogManager.getLogger(BurpExtender.class);
 	public static DomainProducer liveAnalysisTread;
@@ -89,18 +93,31 @@ public class BurpExtender implements IBurpExtender, ITab, IExtensionStateListene
 	}
 
 
+	@Deprecated
 	public static void saveDBfilepathToExtension() {
 		//to save domain result to extensionSetting
 		//仅仅存储sqllite数据库的名称,也就是domainResult的项目名称
 		if (GUI.currentDBFile != null) {
-			BurpExtender.getCallbacks().saveExtensionSetting(BurpExtender.Extension_Setting_Name_DB_File, null);
-			BurpExtender.getCallbacks().saveExtensionSetting(BurpExtender.Extension_Setting_Name_DB_File, GUI.currentDBFile.getAbsolutePath());
+			String dbfilepath = GUI.currentDBFile.getAbsolutePath();
+			stdout.println("Saving Current DB File Path To Disk: "+dbfilepath);
+			System.out.println("Loaded DB File Path From Disk: "+dbfilepath);
+			callbacks.saveExtensionSetting(Extension_Setting_Name_DB_File, dbfilepath);
 		}
-			
 	}
 
+	/**
+	 * 很多时候都获取不到数据，都是null值！有bug
+	 * @return
+	 */
+	@Deprecated
 	public static String loadDBfilepathFromExtension() {
-		return BurpExtender.getCallbacks().loadExtensionSetting(BurpExtender.Extension_Setting_Name_DB_File);
+		String dbfilepath = callbacks.loadExtensionSetting(Extension_Setting_Name_DB_File);
+		if (dbfilepath == null) {
+			//dbfilepath = LineConfig.loadFromDisk().getDbfilepath();
+		}
+		stdout.println("Loaded DB File Path From Disk: "+dbfilepath);
+		System.out.println("Loaded DB File Path From Disk: "+dbfilepath);
+		return dbfilepath;
 	}
 
 
@@ -160,19 +177,15 @@ public class BurpExtender implements IBurpExtender, ITab, IExtensionStateListene
 		{//create GUI
 			public void run()
 			{
-				BurpExtender.callbacks.addSuiteTab(BurpExtender.this); //这里的BurpExtender.this实质是指ITab对象，也就是getUiComponent()中的contentPane.这个参数由GUI()函数初始化。
+				BurpExtender.callbacks.addSuiteTab(BurpExtender.this); 
+				GUI.setProjectMenu(new ProjectMenu(gui));
+				GUI.getProjectMenu().Add();
+				//这里的BurpExtender.this实质是指ITab对象，也就是getUiComponent()中的contentPane.这个参数由GUI()函数初始化。
 				//如果这里报java.lang.NullPointerException: Component cannot be null 错误，需要排查contentPane的初始化是否正确。
 			}
 		});
-
-		//recovery save domain results from extensionSetting
-		String dbFilePath = loadDBfilepathFromExtension();
-		System.out.println("Database FileName From Extension Setting: "+dbFilePath);
-		if (dbFilePath != null && dbFilePath.endsWith(".db")) {
-			gui.LoadData(dbFilePath);
-		}
-
-		gui.getToolPanel().loadConfigToGUI();
+		String projectConfigFile = RecentModel.fetchRecent();//返回值可能为null
+		gui.getToolPanel().loadConfigToGUI(projectConfigFile);//包含db文件的加载
 		startLiveCapture();
 	}
 
@@ -188,9 +201,13 @@ public class BurpExtender implements IBurpExtender, ITab, IExtensionStateListene
 			e.printStackTrace(stderr);
 		}
 
-		gui.getToolPanel().saveConfigToDisk();
-		DomainPanel.autoSave();//域名面板自动保存逻辑有点复杂，退出前再自动保存一次
-		saveDBfilepathToExtension();
+		try {
+			DomainPanel.autoSave();//域名面板自动保存逻辑有点复杂，退出前再自动保存一次
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		String configFilePath = ToolPanel.getLineConfig().saveToDisk();//包含db文件位置
+		RecentModel.saveRecent(configFilePath);
 	}
 
 	//ITab必须实现的两个方法

@@ -264,8 +264,12 @@ public class Commons {
 		Set<String> subNets= new HashSet<String>();
 		for (String ip:IPSet) {
 			ip = ipClean(ip);
-			String subnet = ip.substring(0,ip.lastIndexOf("."))+".0/24";
-			subNets.add(subnet);
+			if (isValidIP(ip)) {
+				String subnet = ip.substring(0,ip.lastIndexOf("."))+".0/24";
+				subNets.add(subnet);
+			}else if(isValidSubnet(ip)) {//这里的IP也可能是网段，不要被参数名称限定了
+				subNets.add(ip);
+			}
 		}
 		return subNets;
 	}
@@ -283,6 +287,10 @@ public class Commons {
 				Set<String> tmpIPSet = new HashSet<String>();
 				for (String ip:IPSet) {
 					ip = ipClean(ip);
+					if (Commons.isValidSubnet(ip)) {//这里的IP也可能是网段，不要被参数名称限定了
+						smallSubNets.add(ip);
+						continue;
+					}
 					if (!Commons.isValidIP(ip)) {
 						System.out.println(ip+" invalid IP address, skip to handle it!");
 						continue;
@@ -691,8 +699,16 @@ public class Commons {
 		String aa = "10.  12. 12.12/";
 		System.out.println(aa.trim());
 	}
+	
+	public static void test7() {
+		HashMap<String,Set<String>> result = Commons.dnsquery("163.177.151.109");
+		Set<String> IPSet = result.get("IP");
+		Set<String> CDNSet = result.get("CDN");
+		System.out.println(IPSet);
+		System.out.println(CDNSet);
+	}
 
 	public static void main(String args[]) {
-		test6();
+		test7();
 	}
 }

@@ -50,13 +50,21 @@ public class LineSearch {
 			ArrayList<String> contentList = new ArrayList<String>();
 			contentList.add(new String(line.getRequest()));
 			contentList.add(new String(line.getResponse()));
-			contentList.add(line.fetchUrlWithCommonFormate());
+			if (line.getEntryType().equals(LineEntry.EntryType_Web)) {
+				contentList.add(line.fetchUrlWithCommonFormate());
+				//之前这里有个bug，如果用了上面这段代码，数据库更新就会失败！why？
+				//因为之前的fetchUrlWithCommonFormate()实现修改了URL的格式导致，where条件无法匹配。
+			}else {
+				contentList.add(line.getUrl());//本质是domain name
+			}
 			contentList.add(line.getIP());
 			contentList.add(line.getCDN());
 			contentList.add(line.getComment());
 			contentList.add(line.getTitle());
+			contentList.add(line.getIcon_hash());
 			if (caseSensitive) {
 				for(String item:contentList) {
+					if (item == null) continue;
 					if (item.contains(keyword)) {
 						return true;
 					}
@@ -64,6 +72,7 @@ public class LineSearch {
 			}else {
 				keyword = keyword.toLowerCase();
 				for(String item:contentList) {
+					if (item == null) continue;
 					if (item.toLowerCase().contains(keyword)) {
 						return true;
 					}

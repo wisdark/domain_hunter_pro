@@ -16,17 +16,23 @@ import java.io.PrintWriter;
 
 public class GUI extends JFrame {
 
-	protected static DomainPanel domainPanel;
+	public static DomainPanel domainPanel;
 	public static TitlePanel titlePanel;
 	public static File currentDBFile;
-	protected PrintWriter stdout;
-	protected PrintWriter stderr;
+	public static ProjectMenu projectMenu;
+	
+	private PrintWriter stdout;
+	private PrintWriter stderr;
 	public dbFileChooser dbfc = new dbFileChooser();
-	protected static ProjectMenu projectMenu;
+	
 	private ToolPanel toolPanel;
 
 	public static ProjectMenu getProjectMenu() {
 		return projectMenu;
+	}
+
+	public static void setProjectMenu(ProjectMenu projectMenu) {
+		GUI.projectMenu = projectMenu;
 	}
 
 	public static DomainPanel getDomainPanel() {
@@ -74,32 +80,44 @@ public class GUI extends JFrame {
 		tabbedWrapper.addTab("Titles", null, titlePanel, null);
 		tabbedWrapper.addTab("Tools", null,toolPanel,null);
 
-		projectMenu = new ProjectMenu(this);
-		projectMenu.Add();
-
+	}
+	/**
+	 * 仅仅锁住图形界面，不影响后台处理数据
+	 */
+	public void lockUnlock() {
+		if (this.getContentPane().isEnabled()) {
+			((JTabbedPane)this.getContentPane()).addTab("Locked",null,new JPanel(),null);
+			((JTabbedPane)this.getContentPane()).setSelectedIndex(3);
+			this.getContentPane().setEnabled(false);
+		}else {
+			this.getContentPane().setEnabled(true);
+			((JTabbedPane)this.getContentPane()).removeTabAt(3);
+			((JTabbedPane)this.getContentPane()).setSelectedIndex(0);
+		}
 	}
 
-	public boolean LoadData(String dbFilePath){
+
+	public static boolean LoadData(String dbFilePath){
 		try {//这其中的异常会导致burp退出
 			BurpExtender.clearQueue();//更换DB文件前进行，否则Queue中会包含之前的数据。
 			System.out.println("=================================");
 			System.out.println("==Start Loading Data From: " + dbFilePath+"==");
-			stdout.println("==Start Loading Data From: " + dbFilePath+"==");
+			BurpExtender.getStdout().println("==Start Loading Data From: " + dbFilePath+"==");
 			currentDBFile = new File(dbFilePath);
 			DBHelper dbhelper = new DBHelper(dbFilePath);
-			domainPanel.setDomainResult(dbhelper.getDomainObj());
+			DomainPanel.setDomainResult(dbhelper.getDomainObj());
 			domainPanel.showToDomainUI();
 			titlePanel.showToTitleUI(dbhelper.getTitles());
 			GUI.setCurrentDBFile(currentDBFile);
+			ToolPanel.getLineConfig().setDbfilepath(currentDBFile.getAbsolutePath());
 			GUI.displayProjectName();
-			BurpExtender.saveDBfilepathToExtension();
 			System.out.println("==End Loading Data From: "+ dbFilePath +"==");//输出到debug console
-			stdout.println("==End Loading Data From: "+ dbFilePath +"==");
+			BurpExtender.getStdout().println("==End Loading Data From: "+ dbFilePath +"==");
 			return true;
 		} catch (Exception e) {
-			stdout.println("Loading Failed!");
+			BurpExtender.getStdout().println("Loading Failed!");
 			e.printStackTrace();//输出到debug console
-			e.printStackTrace(stderr);
+			e.printStackTrace(BurpExtender.getStderr());
 			return false;
 		}
 	}
@@ -109,8 +127,9 @@ public class GUI extends JFrame {
 		if (DomainPanel.getDomainResult() !=null){
 			//String name = GUI.currentDBFile.getName();
 			String name = DomainPanel.getDomainResult().getProjectName();
-			String newName = String.format(BurpExtender.getFullExtenderName()+
-					" [%s]",name);
+			//String newName = String.format(BurpExtender.getFullExtenderName()+" [%s]",name);
+			//v2021.8的版本中，邮件菜单会用到插件名称，所以减小名称的长度
+			String newName = String.format(BurpExtender.getExtenderName()+" [%s]",name);
 			
 			BurpExtender.getCallbacks().setExtensionName(newName); //新插件名称
 			GUI.getProjectMenu().AddDBNameMenuItem(name);

@@ -50,10 +50,12 @@ import javax.swing.event.DocumentListener;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.text.StringEscapeUtils;
 
+import GUI.GUI;
 import burp.BurpExtender;
 import burp.Commons;
 import domain.CertInfo;
 import domain.DomainProducer;
+import title.WebIcon;
 
 /*
  * 所有配置的修改，界面的操作，都立即写入LineConfig对象，如有必要保存到磁盘，再调用一次SaveConfig函数，思路要清晰
@@ -68,7 +70,7 @@ public class ToolPanel extends JPanel {
 	private volatile boolean listenerIsOn = true;
 	PrintWriter stdout;
 	PrintWriter stderr;
-	private JTextField BrowserPath;
+	private static JTextField BrowserPath;
 	public static JTextField PortList;
 	public static JTextArea inputTextArea;
 	public static JTextArea outputTextArea;
@@ -98,21 +100,38 @@ public class ToolPanel extends JPanel {
 	 * 加载： 磁盘文件-->LineConfig对象--->具体控件的值
 	 * 注意对监听器的影响
 	 */
-	public void loadConfigToGUI() {
-		String content = BurpExtender.getCallbacks().loadExtensionSetting(BurpExtender.Extension_Setting_Name_Line_Config);
-		if (content == null) {
+	public void loadConfigToGUI(String projectConfigFile) {
+		BurpExtender.getStdout().println("Loading Tool Panel Config From Disk");
+//		String content = BurpExtender.getCallbacks().loadExtensionSetting(BurpExtender.Extension_Setting_Name_Line_Config);
+//		if (content == null) {
+//			lineConfig = LineConfig.loadFromDisk();
+//		}else {
+//			lineConfig = LineConfig.FromJson(content);
+//		}
+		if (projectConfigFile == null) {
 			lineConfig = new LineConfig();
 		}else {
-			lineConfig = LineConfig.FromJson(content);
+			lineConfig = LineConfig.loadFromDisk(projectConfigFile);//projectConfigFile可能为null
+		}
+		
+		if (lineConfig == null) {
+			BurpExtender.getStdout().println("Loading From Disk Failed, Use Default");
+			lineConfig = new LineConfig();
+		}
+		
+		String dbFilePath = lineConfig.getDbfilepath();
+		
+		if (dbFilePath != null && dbFilePath.endsWith(".db")) {
+			GUI.LoadData(dbFilePath);
 		}
 		//这里的修改也会触发textFieldListener监听器。
 		//由于我们是多个组件共用一个保存逻辑，当前对一个组件设置值的时候，触发保存，从而导致整体数据的修改！！！
 		//所以和domain和title中一样，显示数据时关闭监听器。
 		listenerIsOn = false;
 		inputTextArea.setText(lineConfig.getToolPanelText());
-		
+
 		BrowserPath.setText(lineConfig.getBrowserPath());
-		
+
 		if (!lineConfig.getNmapPath().contains("{host}")) {//兼容新旧版本，
 			lineConfig.setNmapPath(LineConfig.defaultNmap);
 		}
@@ -123,14 +142,14 @@ public class ToolPanel extends JPanel {
 		textFieldElasticURL.setText(lineConfig.getElasticApiUrl());
 		textFieldElasticUserPass.setText(lineConfig.getElasticUsernameAndPassword());
 		textFieldUploadApiToken.setText(lineConfig.getUploadApiToken());
-		
+
 		showItemsInOne.setSelected(lineConfig.isShowItemsInOne());
 		rdbtnSaveTrafficTo.setSelected(lineConfig.isEnableElastic());
 		listenerIsOn = true;//显示完毕后打开监听器。
 	}
 
 
-	public void saveToConfigFromGUI() {
+	public static void saveToConfigFromGUI() {
 		lineConfig.setBrowserPath(BrowserPath.getText());
 		lineConfig.setDirSearchPath(textFieldDirSearch.getText());
 		lineConfig.setBruteDict(textFieldDirBruteDict.getText());
@@ -139,22 +158,11 @@ public class ToolPanel extends JPanel {
 		lineConfig.setElasticApiUrl(textFieldElasticURL.getText().trim());
 		lineConfig.setElasticUsernameAndPassword(textFieldElasticUserPass.getText());
 		lineConfig.setUploadApiToken(textFieldUploadApiToken.getText());
-		
+
 		lineConfig.setToolPanelText(inputTextArea.getText());
 		lineConfig.setShowItemsInOne(showItemsInOne.isSelected());
 		lineConfig.setEnableElastic(rdbtnSaveTrafficTo.isSelected());
 	}
-
-	//要不要主动获取一下所有控件的值呢？
-	//还是说LineConfig的更新全靠控件的监听器
-	//保存： 具体各个控件的值---->LineConfig对象---->磁盘文件
-	public void saveConfigToDisk() {
-		saveToConfigFromGUI();
-		String config = lineConfig.ToJson();
-		BurpExtender.getCallbacks().saveExtensionSetting(BurpExtender.Extension_Setting_Name_Line_Config, null);
-		BurpExtender.getCallbacks().saveExtensionSetting(BurpExtender.Extension_Setting_Name_Line_Config, config);
-	}
-
 
 	/**
 	 * Launch the application.
@@ -198,7 +206,7 @@ public class ToolPanel extends JPanel {
 
 		JLabel lblNewLabelNull = new JLabel("  ");
 		HeaderPanel.add(lblNewLabelNull);
-		
+
 		JButton outputToInput = new JButton("Input<----Output");
 		HeaderPanel.add(outputToInput);
 		outputToInput.addActionListener(new ActionListener() {
@@ -259,7 +267,9 @@ public class ToolPanel extends JPanel {
 				String content = inputTextArea.getText();
 				if (null != content) {
 					Set<String> domains = DomainProducer.grepDomain(content);
-					outputTextArea.setText(String.join(System.lineSeparator(), domains));
+					ArrayList<String> tmpList = new ArrayList<String>(domains);
+					Collections.sort(tmpList,new DomainComparator());
+					outputTextArea.setText(String.join(System.lineSeparator(), tmpList));
 					BurpExtender.liveAnalysisTread.classifyDomains(domains);
 				}
 			}
@@ -278,7 +288,7 @@ public class ToolPanel extends JPanel {
 				}
 			}
 		});
-		
+
 		JButton btnFindIP = new JButton("Find IP");
 		threeFourthPanel.add(btnFindIP);
 		btnFindIP.addActionListener(new ActionListener() {
@@ -291,7 +301,7 @@ public class ToolPanel extends JPanel {
 				}
 			}
 		});
-		
+
 		JButton btnFindIPAndPort = new JButton("Find IP:Port");
 		threeFourthPanel.add(btnFindIPAndPort);
 		btnFindIPAndPort.addActionListener(new ActionListener() {
@@ -332,21 +342,51 @@ public class ToolPanel extends JPanel {
 			}
 
 		});
-
-		JButton btnCertTime = new JButton("GetCertTime");
-		btnCertTime.setToolTipText("get out-of-service time of Cert");
-		threeFourthPanel.add(btnCertTime);
-		btnCertTime.addActionListener(new ActionListener() {
-			List<String> urls = new ArrayList<>();
-			ArrayList<String> result = new ArrayList<String>();
-
+		
+		JButton btnCertDomains = new JButton("GetCertDomains");
+		btnCertDomains.setToolTipText("get Alter Domains of Cert");
+		threeFourthPanel.add(btnCertDomains);
+		btnCertDomains.addActionListener(new ActionListener() {
 			@Override
 			public void actionPerformed(ActionEvent e) {
 				SwingWorker<Map, Map> worker = new SwingWorker<Map, Map>() {
 					//using SwingWorker to prevent blocking burp main UI.
 					@Override
 					protected Map doInBackground() throws Exception {
-						urls = Arrays.asList(lineConfig.getToolPanelText().replaceAll(" ","").replaceAll("\r\n", "\n").split("\n"));
+						ArrayList<String> result = new ArrayList<String>();
+						List<String> urls = Arrays.asList(lineConfig.getToolPanelText().replaceAll(" ","").replaceAll("\r\n", "\n").split("\n"));
+						Iterator<String> it = urls.iterator();
+						while(it.hasNext()) {
+							String url = it.next();
+							Set<String> domains = CertInfo.getAlternativeDomains(url);
+							result.add(url+" "+domains.toString());
+							System.out.println(url+" "+domains.toString());
+						}
+						outputTextArea.setText(String.join(System.lineSeparator(), result));
+						return null;
+					}
+					@Override
+					protected void done() {
+						btnCertDomains.setEnabled(true);
+						stdout.println("~~~~~~~~~~~~~Search Done~~~~~~~~~~~~~");
+					}
+				};
+				worker.execute();
+			}
+		});
+
+		JButton btnCertTime = new JButton("GetCertTime");
+		btnCertTime.setToolTipText("get out-of-service time of Cert");
+		threeFourthPanel.add(btnCertTime);
+		btnCertTime.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				SwingWorker<Map, Map> worker = new SwingWorker<Map, Map>() {
+					//using SwingWorker to prevent blocking burp main UI.
+					@Override
+					protected Map doInBackground() throws Exception {
+						ArrayList<String> result = new ArrayList<String>();
+						List<String> urls = Arrays.asList(lineConfig.getToolPanelText().replaceAll(" ","").replaceAll("\r\n", "\n").split("\n"));
 						Iterator<String> it = urls.iterator();
 						while(it.hasNext()) {
 							String url = it.next();
@@ -361,6 +401,73 @@ public class ToolPanel extends JPanel {
 					protected void done() {
 						btnCertTime.setEnabled(true);
 						stdout.println("~~~~~~~~~~~~~Search Done~~~~~~~~~~~~~");
+					}
+				};
+				worker.execute();
+			}
+		});
+		
+		JButton btnCertIssuer = new JButton("GetCertIssuer");
+		btnCertIssuer.setToolTipText("get issuer of Cert");
+		threeFourthPanel.add(btnCertIssuer);
+		btnCertIssuer.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				SwingWorker<Map, Map> worker = new SwingWorker<Map, Map>() {
+					//using SwingWorker to prevent blocking burp main UI.
+					@Override
+					protected Map doInBackground() throws Exception {
+						ArrayList<String> result = new ArrayList<String>();
+						List<String> urls = Arrays.asList(lineConfig.getToolPanelText().replaceAll(" ","").replaceAll("\r\n", "\n").split("\n"));
+						Iterator<String> it = urls.iterator();
+						while(it.hasNext()) {
+							String url = it.next();
+							String time = CertInfo.getCertIssuer(url);
+							result.add(url+" "+time);
+							System.out.println(url+" "+time);
+						}
+						outputTextArea.setText(String.join(System.lineSeparator(), result));
+						return null;
+					}
+					@Override
+					protected void done() {
+						btnCertIssuer.setEnabled(true);
+						stdout.println("~~~~~~~~~~~~~Search Done~~~~~~~~~~~~~");
+					}
+				};
+				worker.execute();
+			}
+		});
+		
+		JButton iconHashButton = new JButton("GetIconHash");
+		threeFourthPanel.add(iconHashButton);
+		iconHashButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				ArrayList<String> result = new ArrayList<String>();
+				
+				SwingWorker<Map, Map> worker = new SwingWorker<Map, Map>() {
+					//using SwingWorker to prevent blocking burp main UI.
+					@Override
+					protected Map doInBackground() throws Exception {
+						try {
+							List<String> urls = Arrays.asList(lineConfig.getToolPanelText().replaceAll(" ","").replaceAll("\r\n", "\n").split("\n"));
+							Iterator<String> it = urls.iterator();
+							while(it.hasNext()) {
+								String url = it.next();
+								String hash = WebIcon.getHash(url);
+								result.add(hash);
+								System.out.println(url+" "+hash);
+							}
+							outputTextArea.setText(String.join(System.lineSeparator(), result));
+						} catch (Exception e1) {
+							outputTextArea.setText(e1.getMessage());
+							e1.printStackTrace(stderr);
+						}
+						return null;
+					}
+					@Override
+					protected void done() {
 					}
 				};
 				worker.execute();
@@ -412,6 +519,25 @@ public class ToolPanel extends JPanel {
 					List<String> tmplist= new ArrayList<>(contentSet);
 
 					Collections.sort(tmplist);
+					String output = String.join(System.lineSeparator(), tmplist);
+					outputTextArea.setText(output);
+				} catch (Exception e1) {
+					outputTextArea.setText(e1.getMessage());
+				}
+			}
+		});
+
+		JButton sortByLength = new JButton("Sort by Length");
+		threeFourthPanel.add(sortByLength);
+		sortByLength.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				try {
+					List<String> content = Commons.getLinesFromTextArea(inputTextArea);
+					Set<String> contentSet = new HashSet<>(content);
+					List<String> tmplist= new ArrayList<>(contentSet);
+
+					Collections.sort(tmplist,new LengthComparator());
 					String output = String.join(System.lineSeparator(), tmplist);
 					outputTextArea.setText(output);
 				} catch (Exception e1) {
@@ -478,6 +604,32 @@ public class ToolPanel extends JPanel {
 			}
 		});
 
+		JButton btnRegexGrep = new JButton("Regex Grep");
+		threeFourthPanel.add(btnRegexGrep);
+		btnRegexGrep.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				try {
+					String toFind = JOptionPane.showInputDialog("Input Regex", null);
+					if (toFind == null) {
+						return;
+					} else {
+						ArrayList<String> result = new ArrayList<String>();
+						String PATTERN = toFind;
+						Pattern pRegex = Pattern.compile(PATTERN);
+						String content = inputTextArea.getText();
+						Matcher matcher = pRegex.matcher(content);
+						while (matcher.find()) {//多次查找
+							result.add(matcher.group());
+						}
+						outputTextArea.setText(String.join(System.lineSeparator(), result));
+					}
+				} catch (Exception e1) {
+					outputTextArea.setText(e1.getMessage());
+					e1.printStackTrace(stderr);
+				}
+			}
+		});
 
 		JButton btnAddPrefix = new JButton("Add Prefix/Suffix");
 		threeFourthPanel.add(btnAddPrefix);
@@ -567,36 +719,6 @@ public class ToolPanel extends JPanel {
 		});
 
 
-		JButton btnRegexGrep = new JButton("Regex Grep");
-		btnRegexGrep.setEnabled(false);
-		threeFourthPanel.add(btnRegexGrep);
-		btnRegexGrep.addActionListener(new ActionListener() {
-			@Override
-			public void actionPerformed(ActionEvent e) {
-				try {
-					//					String toFind = JOptionPane.showInputDialog("to find which value", null);
-					//					if (toFind == null) {
-					//						return;
-					//					} else {
-					ArrayList<String> result = new ArrayList<String>();
-					//主要目的是找url        path: '/admin/menu',
-					String webpack_PATTERN = "\'/([0-9a-z])*\'"; //TODO 正则表达不正确
-					Pattern pRegex = Pattern.compile(webpack_PATTERN);
-					String content = inputTextArea.getText();
-					Matcher matcher = pRegex.matcher(content);
-					while (matcher.find()) {//多次查找
-						result.add(matcher.group());
-					}
-					outputTextArea.setText(result.toString());
-					//}
-				} catch (Exception e1) {
-					outputTextArea.setText(e1.getMessage());
-					e1.printStackTrace(stderr);
-				}
-			}
-
-		});
-
 		JButton btnIPsToCIDR = new JButton("IPs To CIDR");
 		threeFourthPanel.add(btnIPsToCIDR);
 		btnIPsToCIDR.addActionListener(new ActionListener() {
@@ -645,6 +767,17 @@ public class ToolPanel extends JPanel {
 
 		JButton unescapeHTML = new JButton("UnescapeHTML");
 		threeFourthPanel.add(unescapeHTML);
+		unescapeHTML.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				try {
+					outputTextArea.setText(StringEscapeUtils.unescapeHtml4(inputTextArea.getText()));
+				} catch (Exception e1) {
+					outputTextArea.setText(e1.getMessage());
+					e1.printStackTrace(stderr);
+				}
+			}
+		});
 
 		JButton Base64ToFile = new JButton("Base64ToFile");
 		threeFourthPanel.add(Base64ToFile);
@@ -714,7 +847,7 @@ public class ToolPanel extends JPanel {
 				}
 			}
 		});
-		
+
 		JButton toLowerCaseButton = new JButton("toLowerCase");
 		threeFourthPanel.add(toLowerCaseButton);
 		toLowerCaseButton.addActionListener(new ActionListener() {
@@ -723,7 +856,35 @@ public class ToolPanel extends JPanel {
 				outputTextArea.setText(inputTextArea.getText().toLowerCase());
 			}
 		});
+		
+		
+		JButton testButton = new JButton("test");
+		threeFourthPanel.add(testButton);
+		testButton.addActionListener(new ActionListener() {
+			@Override
+			public void actionPerformed(ActionEvent e) {
 
+				SwingWorker<Map, Map> worker = new SwingWorker<Map, Map>() {
+					//using SwingWorker to prevent blocking burp main UI.
+					@Override
+					protected Map doInBackground() throws Exception {
+						try {
+							outputTextArea.setText(WebIcon.getHash(inputTextArea.getText()));
+						} catch (Exception e1) {
+							outputTextArea.setText(e1.getMessage());
+							e1.printStackTrace(stderr);
+						}
+						return null;
+					}
+					@Override
+					protected void done() {
+					}
+				};
+				worker.execute();
+			}
+		});
+		
+		///////
 		JPanel fourFourthPanel = new JPanel();
 		RightOfCenter.setRightComponent(fourFourthPanel);
 		GridBagLayout gbl_fourFourthPanel = new GridBagLayout();
@@ -847,7 +1008,7 @@ public class ToolPanel extends JPanel {
 		gbc_textFieldDirBruteDict.gridx = 1;
 		gbc_textFieldDirBruteDict.gridy = 5;
 		fourFourthPanel.add(textFieldDirBruteDict, gbc_textFieldDirBruteDict);
-		
+
 		JLabel lblElasticURL = new JLabel("Elastic URL:");
 		GridBagConstraints gbc_lblElasticURL = new GridBagConstraints();
 		gbc_lblElasticURL.anchor = GridBagConstraints.WEST;
@@ -855,7 +1016,7 @@ public class ToolPanel extends JPanel {
 		gbc_lblElasticURL.gridx = 0;
 		gbc_lblElasticURL.gridy = 6;
 		fourFourthPanel.add(lblElasticURL, gbc_lblElasticURL);
-		
+
 		textFieldElasticURL = new JTextField();
 		textFieldElasticURL.setToolTipText("URL of elastic API");
 		textFieldElasticURL.setText("http://10.12.72.55:9200/");
@@ -869,7 +1030,7 @@ public class ToolPanel extends JPanel {
 		gbc_textFieldElasticURL.gridx = 1;
 		gbc_textFieldElasticURL.gridy = 6;
 		fourFourthPanel.add(textFieldElasticURL, gbc_textFieldElasticURL);
-		
+
 		JLabel lblDirElasticUserPass = new JLabel("Elastic Username Password:");
 		GridBagConstraints gbc_lblDirElasticUserPass = new GridBagConstraints();
 		gbc_lblDirElasticUserPass.anchor = GridBagConstraints.WEST;
@@ -877,7 +1038,7 @@ public class ToolPanel extends JPanel {
 		gbc_lblDirElasticUserPass.gridx = 0;
 		gbc_lblDirElasticUserPass.gridy = 7;
 		fourFourthPanel.add(lblDirElasticUserPass, gbc_lblDirElasticUserPass);
-		
+
 		textFieldElasticUserPass = new JTextField();
 		textFieldElasticUserPass.setText("elastic:changeme");
 		textFieldElasticUserPass.setToolTipText("username and password of elastic API");
@@ -890,7 +1051,7 @@ public class ToolPanel extends JPanel {
 		gbc_textField_1.gridx = 1;
 		gbc_textField_1.gridy = 7;
 		fourFourthPanel.add(textFieldElasticUserPass, gbc_textField_1);
-		
+
 		JLabel lblUploadAPIToken = new JLabel("Upload API Token:");
 		GridBagConstraints gbc_lblUploadAPIToken = new GridBagConstraints();
 		gbc_lblUploadAPIToken.anchor = GridBagConstraints.WEST;
@@ -898,7 +1059,7 @@ public class ToolPanel extends JPanel {
 		gbc_lblUploadAPIToken.gridx = 0;
 		gbc_lblUploadAPIToken.gridy = 8;
 		fourFourthPanel.add(lblUploadAPIToken, gbc_lblUploadAPIToken);
-		
+
 		textFieldUploadApiToken = new JTextField();
 		textFieldUploadApiToken.setToolTipText("token of upload api");
 		textFieldUploadApiToken.getDocument().addDocumentListener(new textFieldListener());
@@ -1007,7 +1168,7 @@ public class ToolPanel extends JPanel {
 		gbc_ignoreWrongCAHost.gridx = 1;
 		gbc_ignoreWrongCAHost.gridy = 14;
 		fourFourthPanel.add(ignoreWrongCAHost, gbc_ignoreWrongCAHost);
-		
+
 		rdbtnSaveTrafficTo = new JRadioButton("Save traffic to Elastic");
 		rdbtnSaveTrafficTo.setSelected(false);
 		GridBagConstraints gbc_rdbtnSaveTrafficTo = new GridBagConstraints();
@@ -1114,7 +1275,7 @@ public class ToolPanel extends JPanel {
 
 	//保存各个路径设置参数，自动保存的listener
 	class textFieldListener implements DocumentListener {
-	    
+
 		@Override
 		public void removeUpdate(DocumentEvent e) {
 			if (listenerIsOn) {
@@ -1136,4 +1297,5 @@ public class ToolPanel extends JPanel {
 			}
 		}
 	}
+
 }

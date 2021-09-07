@@ -2,7 +2,8 @@ package GUI;
 
 import java.io.PrintWriter;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -10,19 +11,24 @@ import java.util.concurrent.LinkedBlockingQueue;
 import javax.swing.JOptionPane;
 
 import burp.BurpExtender;
-import burp.Getter;
-import burp.HelperPlus;
+import burp.Commons;
 import burp.IBurpExtenderCallbacks;
 import burp.IExtensionHelpers;
 import burp.IHttpRequestResponse;
-import burp.IHttpService;
+import domain.DomainPanel;
 import title.LineEntry;
-import title.LineTableModel;
 import title.TitlePanel;
 
 //////////////////ThreadGetTitle block/////////////
 //no need to pass BurpExtender object to these class, IBurpExtenderCallbacks object is enough 
-public class ThreadRunner{
+public class ThreadRunner extends Thread{
+	public static final int ChangeService = 4;
+	public static final int ChangeHostInService = 3;
+	public static final int ChangeHostInHeader = 2;
+	public static final int ChangeCancel = 1;
+	public static final int ChangeHelp =0;
+	public static final int ChangeClose = -1;
+	
 	private IHttpRequestResponse messageInfo;
 	private List<RunnerProducer> plist;
 
@@ -31,10 +37,20 @@ public class ThreadRunner{
 	public PrintWriter stderr = new PrintWriter(callbacks.getStderr(), true);
 	public IExtensionHelpers helpers = callbacks.getHelpers();
 	private RunnerGUI runnerGUI;
+	int changeType;
+	private boolean AllProductorFinished;
+	private boolean changeraw;
 
 	public ThreadRunner(RunnerGUI runnerGUI, IHttpRequestResponse messageInfo) {
 		this.runnerGUI = runnerGUI;
 		this.messageInfo = messageInfo;
+		this.changeType = fetchChangeType();
+	}
+	
+	public ThreadRunner(RunnerGUI runnerGUI, IHttpRequestResponse messageInfo,int changeType) {
+		this.runnerGUI = runnerGUI;
+		this.messageInfo = messageInfo;
+		this.changeType = changeType;
 	}
 
 	@Deprecated
@@ -48,69 +64,116 @@ public class ThreadRunner{
 	}
 	
 	/**
-	 * 只修改host，那么protocol、port都不变，适合查找相同服务的IP、Name
-	 * 修改httpService，那么protocol、host、port修改，适合验证cookie\token对于站点的有效性!
-	 * @return
+	 * 情况一：只修改host，那么protocol、port都不变，适合查找相同服务的IP、Name
+	 * 情况二：修改httpService，那么protocol、host、port修改，适合验证cookie\token对于站点的有效性!
+	 * 情况三：目标httpService不变，只修改Header中的host字段，用于检测Nginx或者gateway的防护弱点。
+	 * @return Help=0 CANCEL=1 ....,即数组的index。
 	 */
-	private boolean justChangeHost() {
-		int user_input = JOptionPane.showConfirmDialog(null, "Just change httpService[No] or Host[Yes]?","Change Option",JOptionPane.YES_NO_OPTION);
-		if (JOptionPane.YES_OPTION == user_input) {
+	public static int fetchChangeType() {
+		Object[] options = { "Help","CANCEL","Host In Header","Host Of HttpService","HttpService"};
+		int user_input = JOptionPane.showOptionDialog(null, "Which Part Do You Want To Repalce?", "Chose Replace Part",
+		JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE,
+		null, options, options[0]);
+		if (user_input ==0) {
+			try {
+				Commons.browserOpen("https://github.com/bit4woo/domain_hunter_pro/blob/master/Help.md", null);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+			user_input = fetchChangeType();
+		}
+		return user_input;
+	}
+	public static boolean changeRaw() {
+		int result = JOptionPane.showConfirmDialog(null,"Do you want to change [Host in header] when change service?","Chose",
+				JOptionPane.YES_NO_OPTION,
+				JOptionPane.QUESTION_MESSAGE);
+		if (result == JOptionPane.YES_OPTION) {
 			return true;
 		}else {
 			return false;
 		}
 	}
-
-	public void Do(){
+	
+	public static HashSet<String> getDomainsForBypassCheck(){
+		HashSet<String> resultSet = new HashSet<String>();
+		
+		HashSet<String> tmpSet = new HashSet<String>();//所有子域名列表
+		tmpSet.addAll(DomainPanel.getDomainResult().getSubDomainSet());
+		
+		HashSet<String> unreachableSet = new HashSet<String>();
+		Collection<LineEntry> entries = TitlePanel.getTitleTableModel().getLineEntries().values();
+		for (LineEntry entry:entries) {
+			if (entry.getEntryType().equals(LineEntry.EntryType_DNS) || entry.getStatuscode() == 403) {
+				unreachableSet.add(entry.getHost());
+			}
+			tmpSet.remove(entry.getHost());
+		}//删除了title中成功请求的域名
+		
+		tmpSet.addAll(unreachableSet);//添加了请求失败、只有解析、状态403的域名
+		
+		//		for (String item:tmpSet) {//移除IP，这步骤是否需要？
+		//			if (Commons.isValidDomain(item)) {
+		//				resultSet.add(item);
+		//			}
+		//		}
+		//		
+		//		return resultSet;
+		return tmpSet;
+	}
+	
+	@Override
+	public void run(){
+		runnerGUI.lblStatus.setText("running");
 		BlockingQueue<LineEntry> lineEntryQueue = new LinkedBlockingQueue<LineEntry>();//use to store domains
+		BlockingQueue<String> domainQueue = new LinkedBlockingQueue<String>();
 		lineEntryQueue.addAll(TitlePanel.getTitleTableModel().getLineEntries().values());
-		stdout.println("~~~~~~~~~~~~~Start threading Runner~~~~~~~~~~~~~ total task number: "+lineEntryQueue.size());
-
-		boolean justChangeHost = justChangeHost();
+		domainQueue.addAll(getDomainsForBypassCheck());
+		
+		if (changeType == ChangeCancel || changeType == ChangeClose ){//用户选了cancel（2）或者点击了关闭（-1）
+			return;
+		}
+		
+		if (changeType == ChangeHostInHeader) {
+			stdout.println("~~~~~~~~~~~~~Start threading Runner~~~~~~~~~~~~~ total task number: "+domainQueue.size());
+		}else {
+			stdout.println("~~~~~~~~~~~~~Start threading Runner~~~~~~~~~~~~~ total task number: "+lineEntryQueue.size());
+		}
+		
+		if (changeType != ChangeHostInHeader) {
+			changeraw = changeRaw();
+		}
+		
 		plist = new ArrayList<RunnerProducer>();
 
 		for (int i=0;i<=50;i++) {
-			RunnerProducer p = new RunnerProducer(runnerGUI.getRunnerTableModel(),lineEntryQueue,messageInfo,justChangeHost, i);
+			RunnerProducer p = new RunnerProducer(runnerGUI.getRunnerTableModel(),lineEntryQueue,domainQueue,
+					messageInfo,changeType,changeraw,i);
+			p.setDaemon(true);//将子线程设置为守护线程，会随着主线程的结束而立即结束
 			p.start();
 			plist.add(p);
 		}
 
-		long waitTime = 0;
-		while(true) {//to wait all threads exit.
-			if (lineEntryQueue.isEmpty() && isAllProductorFinished()) {
-				stdout.println("~~~~~~~~~~~~~Get Title Done~~~~~~~~~~~~~");
-				break;
-			}else if(lineEntryQueue.isEmpty() && waitTime >=10*60*1000){
-				stdout.println("~~~~~~~~~~~~~Get Title Done(force exits due to time out)~~~~~~~~~~~~~");
-				break;
-			}else {
-				try {
-					Thread.sleep(60*1000);//1分钟
-					waitTime =waitTime+60*1000;
-				} catch (InterruptedException e) {
-					e.printStackTrace();
-				}
-				continue;//unnecessary
+		for (RunnerProducer p:plist) {
+			try {
+				p.join();
+				//让主线程等待各个子线程执行完成，才会结束。
+				//https://www.cnblogs.com/zheaven/p/12054044.html
+			} catch (InterruptedException e) {
+				stdout.println("force stop received");
+				e.printStackTrace();
+				break;//必须跳出循环，否则只是不再等待其中的一个线程，还会继续等待其他线程
 			}
 		}
+
+		stdout.println("all producer threads finished");
+		AllProductorFinished = true;
 		runnerGUI.lblStatus.setText("finished");
 		return;
 	}
 
 	boolean isAllProductorFinished(){
-		int i = 0;
-		for (RunnerProducer p:plist) {
-			if(p.isAlive()) {
-				i = i+1;
-			}
-		}
-		if (i>0){
-			stdout.println( "~~~~~~~~~~~~~"+i +" productors are still alive~~~~~~~~~~~~~");
-			return false;
-		}else{
-			stdout.println( "~~~~~~~~~~~~~All productor threads exited ~~~~~~~~~~~~~");
-			return true;
-		}
+		return AllProductorFinished;
 	}
 
 	public void stopThreads() {
@@ -121,102 +184,9 @@ public class ThreadRunner{
 			stdout.println("~~~~~~~~~~~~~All stop message sent! wait them to exit~~~~~~~~~~~~~");
 		}
 	}
-}
 
-/*
- * do request use method of burp
- * return IResponseInfo object Set
- *
- */
-
-class RunnerProducer extends Thread {//Producer do
-	private final BlockingQueue<LineEntry> lineEntryQueue;//use to store domains
-	private int threadNo;
-	private boolean stopflag = false;
-
-	private static IBurpExtenderCallbacks callbacks = BurpExtender.getCallbacks();//静态变量，burp插件的逻辑中，是可以保证它被初始化的。;
-	public PrintWriter stdout = new PrintWriter(callbacks.getStdout(), true);
-	public PrintWriter stderr = new PrintWriter(callbacks.getStderr(), true);
-	public IExtensionHelpers helpers = callbacks.getHelpers();
-
-	private HelperPlus getter;
-	private byte[] request;
-	private byte[] response;
-	private IHttpService httpService;
-
-	LineTableModel runnerTableModel;
-	boolean justChangeHost;
-
-	public RunnerProducer(LineTableModel runnerTableModel,BlockingQueue<LineEntry> lineEntryQueue,IHttpRequestResponse messageInfo,boolean justChangeHost, int threadNo) {
-		this.runnerTableModel = runnerTableModel;
-		this.runnerTableModel.setListenerIsOn(false);//否则数据会写入title的数据库
-		this.threadNo = threadNo;
-		this.lineEntryQueue = lineEntryQueue;
-		stopflag= false;
-
-		//为了避免原始messageinfo的改变导致影响后续获取headers等参数，先完成解析存储下来。
-		//而且也可以避免多线程下getter时常getHeaderMap的结果为空的情况！！！
-		//虽然减少了getter的次数，但是还是每个线程执行了一次，目前看来没有出错，因为线程的启动是顺序执行的！
-		getter = new HelperPlus(helpers);
-		request = messageInfo.getRequest();
-		response = messageInfo.getResponse();
-		httpService = messageInfo.getHttpService();
-	}
-
-	public void stopThread() {
-		stopflag = true;
-	}
-
-	@Override
-	public void run() {
-		while(true){
-			try {
-				if (lineEntryQueue.isEmpty() || stopflag) {
-					//stdout.println(threadNo+" Producer exited");
-					break;
-				}
-				//只需要从line中获取host信息就可以了，其他信息都应该和当前的请求一致！
-				LineEntry line = lineEntryQueue.take();
-				String newHost = line.getHost();
-				IHttpService newHttpService;
-				byte[] newRequest;
-				if (justChangeHost) {//适用于查找相同主机，比如 IP 、域名指向相同主机的情况。
-					newHttpService = helpers.buildHttpService(newHost, httpService.getPort(), httpService.getProtocol());
-				}else {//适用于验证token、cookie在其他站点的有效性
-					newHttpService = helpers.buildHttpService(line.getHost(),line.getPort(),line.getProtocol());
-				}
-
-				String headerHost = newHttpService.toString().replaceFirst("http://", "").replaceFirst("https://", "");
-				newRequest = getter.addOrUpdateHeader(true, request, "Host", headerHost);
-
-				String headerVaule = getter.getHeaderValueOf(true, request,"Origin");
-				if (null != headerVaule) {
-					//headerVaule = headerVaule.replaceFirst(httpService.toString(), newHttpService.toString());
-					//newRequest = getter.addOrUpdateHeader(true, newRequest, "Origin", headerVaule);
-					newRequest = getter.addOrUpdateHeader(true, newRequest, "Origin", newHttpService.toString());
-				}
-
-				String headerVaule1 = getter.getHeaderValueOf(true, request,"Referer");
-				if (null != headerVaule1) {
-					//headerVaule1 = headerVaule1.replaceFirst(httpService.toString(), newHttpService.toString());
-					//newRequest = getter.addOrUpdateHeader(true, newRequest, "Referer", headerVaule1);
-					newRequest = getter.addOrUpdateHeader(true, newRequest, "Referer", newHttpService.toString()+"/");
-				}
-
-				int leftTaskNum = lineEntryQueue.size();
-
-				//stdout.println(httpService.toString());
-				//stdout.println(new String(neRequest));
-				IHttpRequestResponse messageinfo = callbacks.makeHttpRequest(newHttpService, newRequest);
-				String fullurl = helpers.analyzeRequest(messageinfo).getUrl().toString();
-				stdout.println(String.format("%s tasks left, Runner Checking: %s",leftTaskNum,fullurl));
-
-				if (messageinfo !=null) {
-					runnerTableModel.addNewLineEntry(new LineEntry(messageinfo,LineEntry.CheckStatus_UnChecked,"Runner"));
-				}
-			}catch (Exception e) {
-				e.printStackTrace(stderr);
-			}
-		}
+	public static void main(String[] args){
+		System.out.println(fetchChangeType());
 	}
 }
+
