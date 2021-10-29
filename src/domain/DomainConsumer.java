@@ -71,6 +71,13 @@ public class DomainConsumer extends Thread {
 			moveQueueToSet(BurpExtender.relatedDomainQueue,result.getRelatedDomainSet());
 			moveQueueToSet(BurpExtender.emailQueue,result.getEmailSet());
 			moveQueueToSet(BurpExtender.packageNameQueue,result.getPackageNameSet());
+			moveQueueToSet(BurpExtender.TLDDomainQueue,result.getSubDomainSet());
+			
+			HashSet<String> tmpTLDDomains = new HashSet<String>();
+			moveQueueToSet(BurpExtender.TLDDomainQueue,tmpTLDDomains);
+			for (String domain:tmpTLDDomains) {
+				DomainPanel.domainResult.addToRootDomainAndSubDomain(domain, false);
+			}
 
 			HashSet<String> newSubdomains = new HashSet<String>();
 			newSubdomains.addAll(result.getSubDomainSet());
@@ -81,8 +88,8 @@ public class DomainConsumer extends Thread {
 			if (newSubdomains.size()>0){
 				BurpExtender.getStdout().println(String.format("~~~~~~~~~~~~~%s subdomains added!~~~~~~~~~~~~~",newSubdomains.size()));
 				BurpExtender.getStdout().println(String.join(System.lineSeparator(), newSubdomains));
-				DomainPanel.autoSave();//进行一次主动保存
 			}
+            DomainPanel.autoSave();
 		}
 	}
 
