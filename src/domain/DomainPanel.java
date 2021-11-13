@@ -1,6 +1,7 @@
 package domain;
 
 import GUI.GUI;
+import GUI.ProjectMenu;
 import Tools.ToolPanel;
 import burp.*;
 import com.google.common.base.Charsets;
@@ -81,6 +82,17 @@ public class DomainPanel extends JPanel {
     PrintWriter stdout;
     PrintWriter stderr;
 
+	public static void createOrOpenDB() {
+		Object[] options = { "Create","Open"};
+		int user_input = JOptionPane.showOptionDialog(null, "You should Create or Open a DB file", "Chose Your Action",
+		JOptionPane.DEFAULT_OPTION, JOptionPane.WARNING_MESSAGE, null, options, options[0]);
+		if (user_input == 0) {
+			ProjectMenu.createNewDb(BurpExtender.getGui());
+		}
+		if (user_input == 1) {
+			ProjectMenu.openDb();
+		}
+	}
 
     public DomainPanel() {//构造函数
         this.setBorder(new EmptyBorder(5, 5, 5, 5));
@@ -294,15 +306,8 @@ public class DomainPanel extends JPanel {
                         File file = fc.getSelectedFile();
                         List<String> lines = Files.readLines(file, Charsets.UTF_8);
                         for (String line : lines) {
-                            line = line.trim();
-                            int type = domainResult.domainType(line);
-                            if (type == DomainManager.SUB_DOMAIN) {
-                                domainResult.getSubDomainSet().add(line);
-                            } else if (type == DomainManager.SIMILAR_DOMAIN) {
-                                domainResult.getSimilarDomainSet().add(line);
-                            } else if (type == DomainManager.TLD_DOMAIN) {
-                                domainResult.addToRootDomainAndSubDomain(line, true);
-                                domainResult.getSubDomainSet().add(line);
+                        	if (domainResult.addIfValid(line)) {
+                        		stdout.println("import " + line +" succeed!");
                             } else {
                                 stdout.println("import skip " + line);
                             }
@@ -591,7 +596,7 @@ public class DomainPanel extends JPanel {
         addButton.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
                 if (domainResult == null) {
-                    JOptionPane.showMessageDialog(null, "you should create project db file first");
+                	createOrOpenDB();
                 } else {
                     String enteredRootDomain = JOptionPane.showInputDialog("Enter Root Domain", null);
                     domainResult.addToRootDomainAndSubDomain(enteredRootDomain,true);
@@ -609,7 +614,7 @@ public class DomainPanel extends JPanel {
         addButton1.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
                 if (domainResult == null) {
-                    JOptionPane.showMessageDialog(null, "you should create project db file first");
+                	createOrOpenDB();
                 } else {
                     String enteredRootDomain = JOptionPane.showInputDialog("Enter Root Domain", null);
                     domainResult.addToRootDomainAndSubDomain(enteredRootDomain,false);
@@ -674,34 +679,7 @@ public class DomainPanel extends JPanel {
                 //to clear sub and similar domains
                 DomainConsumer.QueueToResult();
                 domainResult.getEmailSet().addAll(collectEmails());
-                Set<String> tmpDomains = domainResult.getSubDomainSet();
-                Set<String> newSubDomainSet = new HashSet<>();
-                Set<String> newSimilarDomainSet = new HashSet<String>();
-                
-                tmpDomains.addAll(domainResult.getSimilarDomainSet());
-                tmpDomains.addAll(domainResult.getRelatedDomainSet());
-
-                for (String domain : tmpDomains) {
-                	domain = DomainManager.cleanDomain(domain);
-
-                    int type = domainResult.domainType(domain);
-                    if (type == DomainManager.SUB_DOMAIN || type == DomainManager.IP_ADDRESS)
-                    //包含手动添加的IP
-                    {
-                        newSubDomainSet.add(domain);
-                        domainResult.getRelatedDomainSet().remove(domain);
-                    } else if (type == DomainManager.SIMILAR_DOMAIN) {
-                        newSimilarDomainSet.add(domain);
-                    } else if (type == DomainManager.TLD_DOMAIN) {
-                        domainResult.addToRootDomainAndSubDomain(domain, true);
-                        newSubDomainSet.add(domain);
-                        domainResult.getRelatedDomainSet().remove(domain);
-                    }
-                }
-
-                domainResult.setSubDomainSet(newSubDomainSet);
-                domainResult.setSimilarDomainSet(newSimilarDomainSet);
-
+                domainResult.freshBaseRule();
                 showToDomainUI();
                 autoSave();
             }
