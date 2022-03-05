@@ -5,6 +5,7 @@ import java.awt.Desktop;
 import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
+import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.MalformedURLException;
@@ -27,6 +28,7 @@ import java.util.regex.Pattern;
 import javax.swing.JOptionPane;
 import javax.swing.JTextArea;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.net.util.SubnetUtils;
 import org.apache.commons.net.util.SubnetUtils.SubnetInfo;
 import org.xbill.DNS.ARecord;
@@ -37,6 +39,9 @@ import org.xbill.DNS.Record;
 import org.xbill.DNS.Resolver;
 import org.xbill.DNS.SimpleResolver;
 import org.xbill.DNS.ZoneTransferIn;
+
+import com.ibm.icu.text.CharsetDetector;
+import com.ibm.icu.text.CharsetMatch;
 
 public class Commons {
 
@@ -61,16 +66,19 @@ public class Commons {
 		}
 	}
 
+	/**
+	 * 对于信息收集来说，没有用的文件
+	 * js是有用的
+	 * pdf\doc\excel等也是有用的，可以收集到其中的域名
+	 * rar\zip文件即使其中包含了有用信息，是无法直接读取的
+	 * @param urlpath
+	 * @return
+	 */
 	public static boolean uselessExtension(String urlpath) {
-		Set<String> extendset = new HashSet<String>();
-		extendset.add(".gif");
-		extendset.add(".jpg");
-		extendset.add(".png");
-		extendset.add(".css");//gif,jpg,png,css,woff
-		extendset.add(".woff");
-		Iterator<String> iter = extendset.iterator();
-		while (iter.hasNext()) {
-			if(urlpath.endsWith(iter.next().toString())) {//if no next(), this loop will not break out
+		String extensions = "css|jpeg|gif|jpg|png|rar|zip|svg|jpeg|ico|woff|woff2|ttf|otf";
+		String[] extList = extensions.split("\\|");
+		for ( String item:extList) {
+			if(urlpath.endsWith("."+item)) {
 				return true;
 			}
 		}
@@ -116,7 +124,7 @@ public class Commons {
 			return false;
 		}
 	}
-	
+
 	@Deprecated
 	public static boolean isValidSubnet(String subnet) {
 		subnet = subnet.replaceAll(" ", "");
@@ -280,7 +288,7 @@ public class Commons {
 	public static Set<String> toSmallerSubNets(Set<String> IPSet) {
 		Set<String> subNets= toClassCSubNets(IPSet);
 		Set<String> smallSubNets= new HashSet<String>();
-		
+
 		try {
 			for(String CNet:subNets) {//把所有IP按照C段进行分类
 				SubnetUtils net = new SubnetUtils(CNet);
@@ -372,7 +380,7 @@ public class Commons {
 		IPSet.addAll(result);
 		return IPSet;
 	}
-	
+
 	public static List<String> toIPList (String subnet) {
 		List<String> IPList = new ArrayList<String>();
 		try {
@@ -427,7 +435,7 @@ public class Commons {
 		}catch(Exception e) {
 			e.printStackTrace(BurpExtender.getStderr());
 		}
-		
+
 		return IPList;
 	}
 
@@ -489,6 +497,99 @@ public class Commons {
 		}
 		return request;
 	}
+	/**
+	 * 尝试在响应包中寻找meta charset的标签，来判别响应包的编码
+	 * 
+	 * 一些常见格式：
+	 * <meta HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
+<meta charset="UTF-8">
+<meta charset="utf-8">
+<meta charset=utf-8>
+<meta http-equiv="Content-Language" content="zh-CN">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	 */
+	static String detectCharsetInBody(byte[] requestOrResponse){
+		String body = new String(requestOrResponse);
+		if (body.contains("\r\n\r\n")) {
+			body = body.split("\r\n\r\n")[1];
+		}
+		if (body.length() >1000) {
+			body = body.substring(0,1000);
+		}
+		//<meta charset="utf-8">
+		String pattern = "<meta.*charset=(.*?)>";//加? 非贪婪模式
+		String patternExtract = "charset=(.*?)>";
+
+		Pattern metaCharset = Pattern.compile(pattern);
+		Matcher matcher = metaCharset.matcher(body);
+		//System.out.println(body);
+		if (matcher.find()) {//多次查找
+			String charsetLine = matcher.group();
+			//System.out.println("----"+charsetLine);
+			charsetLine = charsetLine.replaceAll("\"","");//第一个参数是正则
+			charsetLine = charsetLine.replaceAll("/","");
+			charsetLine = charsetLine.replaceAll(" ","");
+
+			Pattern extract = Pattern.compile(patternExtract);
+			Matcher extracter = extract.matcher(charsetLine);
+			if (extracter.find()) {
+				//System.out.println( extracter.group(0));
+				//System.out.println( extracter.group(1));
+				String charset = extracter.group(1);
+				return charset;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * utf8 utf-8都是可以的。
+	 * @param requestOrResponse
+	 * @return
+	 */
+	public static String detectCharset(byte[] requestOrResponse){
+		IExtensionHelpers helpers = BurpExtender.getCallbacks().getHelpers();
+		Getter getter = new Getter(helpers);
+		boolean isRequest = true;
+		if (new String(requestOrResponse).startsWith("HTTP/")) {//response
+			isRequest = false;
+		}
+
+		String contentType = getter.getHeaderValueOf(isRequest,requestOrResponse,"Content-Type");
+
+		//1、尝试从contentTpye中获取
+		if (contentType != null){
+			if (contentType.toLowerCase().contains("charset=")) {
+				String tmpcharSet = contentType.toLowerCase().split("charset=")[1];
+				if (tmpcharSet != null && tmpcharSet.length() >0) {
+					return tmpcharSet;
+				}
+			}
+		}
+
+		if (!isRequest) {
+			String tmpCharset = detectCharsetInBody(requestOrResponse);
+			System.out.println("响应包中编码识别结果："+tmpCharset);
+			if (null != tmpCharset) {
+				return tmpCharset;
+			}
+		}
+
+
+		//2、尝试使用ICU4J进行编码的检测
+		CharsetDetector detector = new CharsetDetector();
+		detector.setText(requestOrResponse);
+		CharsetMatch cm = detector.detect();
+		System.out.println("ICU4J检测到编码："+cm.getName());
+		if (cm != null) {
+			return cm.getName();
+		}
+
+		//3、http post的默认编码
+		return "ISO-8859-1";
+	}
 
 
 	public static List<Integer> Port_prompt(Component prompt, String str){
@@ -521,16 +622,16 @@ public class Commons {
 		}
 		return result;
 	}
-	
+
 	public static String replaceLast(String string, String toReplace, String replacement) {
-	    int pos = string.lastIndexOf(toReplace);
-	    if (pos > -1) {
-	        return string.substring(0, pos)
-	             + replacement
-	             + string.substring(pos + toReplace.length());
-	    } else {
-	        return string;
-	    }
+		int pos = string.lastIndexOf(toReplace);
+		if (pos > -1) {
+			return string.substring(0, pos)
+					+ replacement
+					+ string.substring(pos + toReplace.length());
+		} else {
+			return string;
+		}
 	}
 
 
@@ -620,7 +721,7 @@ public class Commons {
 		}
 		return result;
 	}
-	
+
 
 	public static List<String> removePrefixAndSuffix(List<String> input,String Prefix,String Suffix) {
 		ArrayList<String> result = new ArrayList<String>();
@@ -652,31 +753,31 @@ public class Commons {
 			return result;
 		}
 	}
-	
+
 	public static String reverse(String str) {
 		if (str == null) {
 			return null;
 		}
 		return new StringBuffer(str).reverse().toString();
 	}
-	
+
 	public static void test1() {
 		SubnetUtils net = new SubnetUtils("143.92.67.34/24");
 		System.out.println(net.getInfo().isInRange("143.92.67.34:6443"));
 	}
 	public static void test2() {
-				Set<String> IPSet = new HashSet<String>();
-				IPSet.add("192.168.1.225");
-				IPSet.add("192.168.1.128");
-				IPSet.add("192.168.1.129");
-				IPSet.add("192.168.1.155");
-				IPSet.add("192.168.1.224");
-				IPSet.add("192.168.1.130");
-				Set<String> subnets = toSmallerSubNets(IPSet);
-		
-				System.out.println(toIPSet(subnets));
+		Set<String> IPSet = new HashSet<String>();
+		IPSet.add("192.168.1.225");
+		IPSet.add("192.168.1.128");
+		IPSet.add("192.168.1.129");
+		IPSet.add("192.168.1.155");
+		IPSet.add("192.168.1.224");
+		IPSet.add("192.168.1.130");
+		Set<String> subnets = toSmallerSubNets(IPSet);
+
+		System.out.println(toIPSet(subnets));
 	}
-	
+
 	public static void test3() {
 		Set<String>  a= new HashSet();
 		a.add("218.213.102.6/31");
@@ -696,21 +797,21 @@ public class Commons {
 	}
 	public static void test4() {
 		String Prefix = "\"";
-//		String Prefix = Pattern.quote("\"");
+		//		String Prefix = Pattern.quote("\"");
 		System.out.println(Prefix);
 		System.out.println("\"aaaa\"".replaceFirst(Prefix, ""));
 	}
-	
+
 	public static void test5() {
 		String aa = "10.12.12.12/";
 		System.out.println(aa.split("/").length);
 	}
-	
+
 	public static void test6() {
 		String aa = "10.  12. 12.12/";
 		System.out.println(aa.trim());
 	}
-	
+
 	public static void test7() {
 		HashMap<String,Set<String>> result = Commons.dnsquery("163.177.151.109");
 		Set<String> IPSet = result.get("IP");
@@ -719,7 +820,16 @@ public class Commons {
 		System.out.println(CDNSet);
 	}
 
-	public static void main(String args[]) {
-		test7();
+	public static void test8() {
+		System.out.println(uselessExtension("abc.css"));
+	}
+
+	public static void test9() throws Exception {
+		byte[] body = FileUtils.readFileToByteArray(new File("/private/tmp/response.html"));
+		System.out.println(detectCharsetInBody(body));
+	}
+
+	public static void main(String args[]) throws Exception {
+		test9();
 	}
 }

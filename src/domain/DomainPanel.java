@@ -4,6 +4,8 @@ import GUI.GUI;
 import GUI.ProjectMenu;
 import Tools.ToolPanel;
 import burp.*;
+import thread.ThreadSearhDomain;
+
 import com.google.common.base.Charsets;
 import com.google.common.io.Files;
 import com.google.common.net.InternetDomainName;
@@ -980,7 +982,13 @@ public class DomainPanel extends JPanel {
         AllMessages.addAll(Arrays.asList(messages));
         AllMessages.addAll(collectPackageNameMessages());//包含错误回显的请求响应消息
 
-        new ThreadSearhDomain(AllMessages).Do();
+        ThreadSearhDomain searchinstance = new ThreadSearhDomain(AllMessages);
+        searchinstance.setDaemon(true);
+        try {
+			searchinstance.join();
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
         //DomainPanel.autoSave();//每次搜索完成都应该进行一次保存,放在Do()函数中实现
         return null;
     }
@@ -1140,7 +1148,7 @@ public class DomainPanel extends JPanel {
      */
     public File saveDomainOnly() {
         try {
-            File file = BurpExtender.getGui().dbfc.dialog(false);
+            File file = BurpExtender.getGui().dbfc.dialog(false,".db");
             if (file != null) {
                 DBHelper dbHelper = new DBHelper(file.toString());
                 if (dbHelper.saveDomainObject(domainResult)) {
@@ -1162,13 +1170,17 @@ public class DomainPanel extends JPanel {
         File file = GUI.getCurrentDBFile();
         if (file == null) {
             if (null == DomainPanel.getDomainResult()) return;//有数据才弹对话框指定文件位置。
-            file = BurpExtender.getGui().dbfc.dialog(false);
+            file = BurpExtender.getGui().dbfc.dialog(false,".db");
             GUI.setCurrentDBFile(file);
         }
         if (file != null) {
             DBHelper dbHelper = new DBHelper(file.toString());
             boolean success = dbHelper.saveDomainObject(domainResult);
-            log.info("domain data saved");
+            if (success) {
+            	log.info("domain data saved");
+            }else {
+            	log.error("domain data save failed");
+            }
         }
     }
 
