@@ -1,32 +1,17 @@
 package title;
 
-import java.nio.charset.Charset;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
+import ASN.ASNEntry;
+import ASN.ASNQuery;
+import burp.*;
+import com.alibaba.fastjson.JSON;
+import com.google.common.hash.HashCode;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import com.alibaba.fastjson.JSON;
-import com.google.common.hash.HashCode;
-import com.ibm.icu.text.CharsetDetector;
-import com.ibm.icu.text.CharsetMatch;
-
-import burp.BurpExtender;
-import burp.Commons;
-import burp.Getter;
-import burp.HelperPlus;
-import burp.IBurpExtenderCallbacks;
-import burp.IExtensionHelpers;
-import burp.IHttpRequestResponse;
-import burp.IHttpService;
-import burp.IRequestInfo;
-import burp.IResponseInfo;
+import java.nio.charset.Charset;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class LineEntry {
 	private static final Logger log=LogManager.getLogger(LineEntry.class);
@@ -49,11 +34,13 @@ public class LineEntry {
 	public static final String[] CheckStatusArray = {LineEntry.CheckStatus_UnChecked, LineEntry.CheckStatus_Checking,
 			LineEntry.CheckStatus_Checked,LineEntry.CheckStatus_MoreAction};
 
-	public static final String NotTargetBaseOnCertInfo = "NotTargetBaseOnCertInfo";
-	public static final String NotTargetBaseOnBlackList = "NotTargetBaseOnBlackList";
-	
+	public static final String NotTargetBaseOnCertInfo = "CertInfoNotMatch";
+	public static final String NotTargetBaseOnBlackList = "IPInBlackList";
+
 	public static final String EntryType_Web = "Web";
 	public static final String EntryType_DNS = "DNS";
+	public static final String EntryType_Manual_Saved = "Manual_Saved";
+
 
 	public static String systemCharSet = getSystemCharSet();
 
@@ -76,6 +63,7 @@ public class LineEntry {
 	private String webcontainer = "";
 	private String time = "";
 	private String icon_hash = "";
+	private String ASNInfo = "";
 
 	//Gson中，加了transient表示不序列化，是最简单的方法
 	//给不想被序列化的属性增加transient属性---java特性
@@ -107,8 +95,8 @@ public class LineEntry {
 
 	/**
 	 * 用于构造DNS记录
-	 * @param isRequest
-	 * @param requestOrResponse
+	 * @param host
+	 * @param IPset
 	 * @return
 	 */
 	public LineEntry(String host,Set<String> IPset) {
@@ -218,10 +206,10 @@ public class LineEntry {
 	public void DoDirBrute() {
 
 	}
-	
+
 	public void DoGetIconHash() {
 		if (EntryType == EntryType_Web) {
-			String tmpurl =getUrl(); 
+			String tmpurl =getUrl();
 			this.setIcon_hash(WebIcon.getHash(tmpurl));
 		}
 	}
@@ -549,6 +537,39 @@ public class LineEntry {
 
 	public void setComment(String comment) {
 		this.comment = comment;
+	}
+
+	public String getASNInfo() {
+		return ASNInfo;
+	}
+
+	public void setASNInfo(String ASNInfo) {
+		this.ASNInfo = ASNInfo;
+	}
+
+	public String getFirstIP(){
+		Iterator<String> it = this.fetchIPSet().iterator();
+		if (it.hasNext()) {
+			String ip = it.next();
+			return ip;
+		}
+		return "";
+	}
+	public void freshASNInfo() {
+		try {
+			Iterator<String> it = this.fetchIPSet().iterator();
+			if (it.hasNext()){
+				String ip = it.next();
+				if (IPAddressUtils.isValidIP(ip) && !IPAddressUtils.isPrivateIPv4(ip)){
+					ASNEntry asn = ASNQuery.query(ip);
+					if (null != asn){
+						this.ASNInfo = asn.fetchASNDescription();
+					}
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
 	}
 
 	private List<String> getCommentList() {

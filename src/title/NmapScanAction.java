@@ -12,9 +12,9 @@ import java.net.URL;
 
 import org.apache.commons.io.FileUtils;
 
-import Tools.ToolPanel;
 import burp.BurpExtender;
 import burp.Commons;
+import config.ConfigPanel;
 
 class NmapScanAction implements ActionListener{
 
@@ -29,7 +29,7 @@ class NmapScanAction implements ActionListener{
 	@Override
 	public void actionPerformed(ActionEvent actionEvent) {
 		try{
-			java.util.List<String> urls = lineTable.getModel().getURLs(rows);
+			java.util.List<String> urls = lineTable.getLineTableModel().getURLs(rows);
 			for(String url:urls) {
 				String host = new URL(url).getHost();
 				String batFilePathString  = genbatFile(host);
@@ -47,7 +47,7 @@ class NmapScanAction implements ActionListener{
 		try {
 			String basedir = (String) System.getProperties().get("java.io.tmpdir");
 			
-			String nmapPath = ToolPanel.getLineConfig().getNmapPath();
+			String nmapPath = ConfigPanel.getLineConfig().getNmapPath();
 			String command = nmapPath.replace("{host}", host.trim());
 
 			//将命令写入剪切板

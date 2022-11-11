@@ -1,31 +1,17 @@
 package title;
 
-import java.io.PrintWriter;
-import java.io.Serializable;
-import java.net.URL;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import GUI.GUIMain;
+import burp.*;
+import domain.DomainPanel;
+import domain.target.TargetEntry;
 
 import javax.swing.event.TableModelEvent;
 import javax.swing.event.TableModelListener;
 import javax.swing.table.AbstractTableModel;
-
-import GUI.GUI;
-import burp.BurpExtender;
-import burp.Commons;
-import burp.DBHelper;
-import burp.Getter;
-import burp.IExtensionHelpers;
-import burp.IHttpRequestResponse;
-import burp.IHttpService;
-import burp.IMessageEditorController;
-import burp.IPAddress;
-import burp.IntArraySlice;
-import domain.DomainPanel;
+import java.io.PrintWriter;
+import java.io.Serializable;
+import java.net.URL;
+import java.util.*;
 
 
 public class LineTableModel extends AbstractTableModel implements IMessageEditorController,Serializable {
@@ -40,7 +26,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 	/*
 	 * 为了提高LineEntry的查找速度，改为使用LinkedHashMap,
 	 * http://infotechgems.blogspot.com/2011/11/java-collections-performance-time.html
-	 * 
+	 *
 	 * LinkedHashMap是继承于HashMap，是基于HashMap和双向链表来实现的。
 	 * HashMap无序；LinkedHashMap有序，可分为插入顺序和访问顺序两种。默认是插入顺序。
 	 * 如果是访问顺序，那put和get操作已存在的Entry时，都会把Entry移动到双向链表的表尾(其实是先删除再插入)。
@@ -56,7 +42,8 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 	PrintWriter stderr;
 
 	private static final String[] standardTitles = new String[] {
-			"#", "URL", "Status", "Length", "Title","Comments","Server","isChecked","AssetType","CheckDoneTime","IP", "CDN|CertInfo", "IconHash"};
+			"#", "URL", "Status", "Length", "Title","Comments","Server","isChecked",
+			"AssetType","CheckDoneTime","IP", "CDN|CertInfo","ASNInfo","IconHash"};
 	private static List<String> titletList = new ArrayList<>(Arrays.asList(standardTitles));
 	//为了实现动态表结构
 	public static List<String> getTitletList() {
@@ -90,11 +77,11 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 					//int column = e.getColumn();//获取触发事件的列索引
 					//stdout.println(rowstart+"---"+rowend);
 
-					DBHelper dbHelper = new DBHelper(GUI.currentDBFile.toString());
+					DBHelper dbHelper = new DBHelper(GUIMain.getCurrentDBFile().toString());
 					if (type == TableModelEvent.INSERT) {//插入事件使用批量方法好像不行，都是一个个插入的，每次都会触发
 						//从使用场景来看也无需使用批量
 						for (int i = rowstart; i <= rowend; i++) {
-							dbHelper.addTitle(lineEntries.getValueAtIndex(i));
+							dbHelper.addTitle(lineEntries.get(i));
 						}
 					} else if (type == TableModelEvent.UPDATE) {
 						/*
@@ -108,7 +95,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 
 						List<LineEntry> entries = new ArrayList<LineEntry>();
 						for (int i = rowstart; i <= rowend; i++) {
-							LineEntry entry = lineEntries.getValueAtIndex(i);
+							LineEntry entry = lineEntries.get(i);
 							//entry.setTime(Commons.getNowTimeString());
 							//这里不再更新时间，时间只表示CheckDone的时间
 							entries.add(entry);
@@ -128,9 +115,9 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 						//必须从高位index进行删除，否则删除的对象会和预期不一致！！！
 						List<String> urls = new ArrayList<String>();
 						for (int i = rowend; i >= rowstart; i--) {
-							String url = lineEntries.getValueAtIndex(i).getUrl();
+							String url = lineEntries.get(i).getUrl();
 							urls.add(url);
-							lineEntries.removeByIndex(i);//删除tableModel中的元素。
+							lineEntries.remove(i);//删除tableModel中的元素。
 							stdout.println("### "+url+" deleted");
 						}
 						dbHelper.deleteTitlesByUrl(urls);//删除数据库中的元素
@@ -256,7 +243,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 	@Override
 	public Object getValueAt(int rowIndex, int columnIndex)
 	{
-		LineEntry entry = lineEntries.getValueAtIndex(rowIndex);
+		LineEntry entry = lineEntries.get(rowIndex);
 		//entry.parse();---
 		//"#", "URL", "Status", "Length", "Server","Title", "IP", "CDN", "Comments","Time","isChecked"};
 		if (columnIndex == titletList.indexOf("#")) {
@@ -298,13 +285,16 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 		if (columnIndex == titletList.indexOf("IconHash")){
 			return entry.getIcon_hash();
 		}
+		if (columnIndex == titletList.indexOf("ASNInfo")){
+			return entry.getASNInfo();
+		}
 		return "";
 	}
 
 
 	@Override
 	public void setValueAt(Object value, int row, int col) {
-		LineEntry entry = lineEntries.getValueAtIndex(row);
+		LineEntry entry = lineEntries.get(row);
 		if (col == titletList.indexOf("Comments")){
 			String valueStr = ((String) value).trim();
 			//if (valueStr.equals("")) return;
@@ -329,10 +319,10 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 		//虽然触发了，却无法更新数据库。
 		if (syncToFile){
 			try {
-				if (GUI.currentDBFile.delete()){
-					GUI.currentDBFile.createNewFile();//文件存在时，不会创建新文件!必须先删除就文件
+				if (GUIMain.getCurrentDBFile().delete()){
+					GUIMain.getCurrentDBFile().createNewFile();//文件存在时，不会创建新文件!必须先删除就文件
 				}
-				DBHelper dbHelper = new DBHelper(GUI.currentDBFile.toString());
+				DBHelper dbHelper = new DBHelper(GUIMain.getCurrentDBFile().toString());
 				dbHelper.saveDomainObject(DomainPanel.getDomainResult());//效果等同于删除所有title。速度更快
 				//dbHelper.deleteTitles(this.getLineEntries());
 			}catch (Exception e){
@@ -347,19 +337,19 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 	}
 
 	/**
-	 * 
+	 *
 	 * @return 获取已成功获取title的Entry的IP地址集合
 	 */
-	private Set<String> getIPSetFromTitle() {
+	Set<String> getIPSetFromTitle() {
 		Set<String> result = new HashSet<String>();
 		//lineEntries.addAll(hidenLineEntries);
 		for(LineEntry line:lineEntries.values()) {
 			String IPString = line.getIP();
 			if (IPString == null || IPString.length() <7) continue;//处理保存的请求，没有IP的情况
-			String[] linetext = line.getIP().split(",");
-			for (String ip:linetext){
-				ip = Commons.ipClean(ip);
-				if (Commons.isValidIP(ip)){
+			HashSet<String> ips = line.fetchIPSet();
+			for (String ip:ips){
+				ip = IPAddressUtils.ipClean(ip);
+				if (IPAddressUtils.isValidIP(ip)){
 					result.add(ip);
 				}else {
 					System.out.println(ip + "invalid IP address, skip to handle it!");
@@ -367,12 +357,31 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			}
 		}
 
-		for(Set<String> IPSet:noResponseDomain.values()) {
-			for (String ip:IPSet){
-				result.add(ip.trim());
+		return result;
+	}
+
+	/**
+	 * 获取title记录中的所有公网IP
+	 * @return
+	 */
+	Set<String> getPublicIPSetFromTitle() {
+		HashSet<String> result = new HashSet<>();
+		for (String ip:getIPSetFromTitle()){
+			if (IPAddressUtils.isValidIP(ip)&& !IPAddressUtils.isPrivateIPv4(ip)){
+				result.add(ip);
 			}
 		}
 		return result;
+	}
+
+	/**
+	 * 获取title记录中的所有公网IP计算出的公网网段
+	 * @return
+	 */
+	public Set<String> getPublicSubnets() {
+		Set<String> IPsOfDomain = getPublicIPSetFromTitle();
+		Set<String> subnets = IPAddressUtils.toSmallerSubNets(IPsOfDomain);
+		return subnets;
 	}
 
 	/**
@@ -380,19 +389,19 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 	 * @return 扩展IP集合
 	 */
 	public Set<String> GetExtendIPSet() {
+
 		Set<String> IPsOfDomain = getIPSetFromTitle();//title记录中的IP
-		//Set<String> CSubNetIPs = Commons.subNetsToIPSet(Commons.toSubNets(IPsOfDomain));
-		Set<String> IPsOfcertainSubnets = Commons.toIPSet(DomainPanel.getDomainResult().getSubnetSet());//用户配置的确定IP+网段
+		Set<String> IPsOfcertainSubnets = DomainPanel.fetchTargetModel().fetchTargetIPSet();//用户配置的确定IP+网段
 		IPsOfDomain.addAll(IPsOfcertainSubnets);
+		IPsOfDomain.removeAll(DomainPanel.getDomainResult().getNotTargetIPSet());
+		//计算网段前，将CDN和云服务的IP排除在外，这就是这个集合的主要作用！
 
-		Set<String> subnets = Commons.toSmallerSubNets(IPsOfDomain);//当前所有title结果+确定IP/网段计算出的IP网段
+		Set<String> subnets = IPAddressUtils.toSmallerSubNets(IPsOfDomain);//当前所有title结果+确定IP/网段计算出的IP网段
 
-		Set<String> CSubNetIPs = Commons.toIPSet(subnets);// 当前所有title结果计算出的IP集合
+		Set<String> CSubNetIPs = IPAddressUtils.toIPSet(subnets);// 当前所有title结果计算出的IP集合
 
-		CSubNetIPs.removeAll(IPsOfDomain);//删除域名对应的IP
-		CSubNetIPs.removeAll(IPsOfcertainSubnets);
-		//Set<String> blackIPSet = DomainPanel.getDomainResult().getNotTargetIPSet();
-		//CSubNetIPs.removeAll(blackIPSet);//删除黑名单中的IP
+		CSubNetIPs.removeAll(IPsOfDomain);//删除域名对应的IP，之前已经请求过了
+		CSubNetIPs.removeAll(IPsOfcertainSubnets);//删除网段对应的IP，之前已经请求过了
 
 		return CSubNetIPs;
 	}
@@ -405,11 +414,43 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 	 */
 	public Set<String> GetSubnets() {
 		Set<String> IPsOfDomain = getIPSetFromTitle();//title记录中的IP
-		Set<String> IPsOfcertainSubnets = Commons.toIPSet(DomainPanel.getDomainResult().getSubnetSet());//用户配置的确定IP+网段
+		Set<String> IPsOfcertainSubnets = DomainPanel.fetchTargetModel().fetchTargetIPSet();//用户配置的确定IP+网段
 		IPsOfDomain.addAll(IPsOfcertainSubnets);
 		//Set<String> CSubNetIPs = Commons.subNetsToIPSet(Commons.toSubNets(IPsOfDomain));
-		Set<String> subnets = Commons.toSmallerSubNets(IPsOfDomain);
+		Set<String> subnets = IPAddressUtils.toSmallerSubNets(IPsOfDomain);
 		return subnets;
+	}
+
+	/**
+	 * 获取title panel中所有entry中的Host+port字段，除了手动保存的请求包记录。
+	 * 用target中的IP网段信息+子域名集合+特殊端口目标集合-这个host集合 = 需要去获取title的新域名集合
+	 *
+	 * 如果是默认端口 80 443就不显示端口
+	 * 如果是特殊端口，就加上端口。
+	 * @return
+	 */
+	public Set<String> GetHostsWithSpecialPort() {
+		HashSet<String> result = new HashSet<>();
+		for (LineEntry entry:lineEntries.values()){
+			try{
+				if (entry.getEntryType().equalsIgnoreCase(LineEntry.EntryType_Manual_Saved)){
+					continue;
+				}
+				if (entry.getComment().contains("Manual-Saved")){
+					continue;
+				}
+
+				if (entry.getPort() !=80 && entry.getPort() !=443){
+					result.add(entry.getHost()+":"+entry.getPort());
+				}else {
+					result.add(entry.getHost());
+				}
+
+			}catch (Exception e){
+				e.printStackTrace(stderr);
+			}
+		}
+		return result;
 	}
 
 	/**
@@ -447,7 +488,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			List<String> hosts = new ArrayList<>();
 
 			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
-				String host = lineEntries.getValueAtIndex(rows[i]).getHost();
+				String host = lineEntries.get(rows[i]).getHost();
 				hosts.add(host);
 			}
 			return hosts;
@@ -460,7 +501,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			List<String> hosts = new ArrayList<>();
 
 			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
-				LineEntry line = lineEntries.getValueAtIndex(rows[i]);
+				LineEntry line = lineEntries.get(rows[i]);
 				String hostAndPort = line.getHost()+":"+line.getPort();
 				hosts.add(hostAndPort);
 			}
@@ -474,7 +515,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			Set<String> Result = new HashSet<>();
 
 			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
-				Set<String> IPs = lineEntries.getValueAtIndex(rows[i]).fetchIPSet();
+				Set<String> IPs = lineEntries.get(rows[i]).fetchIPSet();
 				Result.addAll(IPs);
 			}
 			return Result;
@@ -487,7 +528,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			List<String> urls = new ArrayList<>();
 
 			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
-				String url = lineEntries.getValueAtIndex(rows[i]).getUrl();
+				String url = lineEntries.get(rows[i]).getUrl();
 				urls.add(url);
 			}
 			return urls;
@@ -500,7 +541,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			List<String> urls = new ArrayList<>();
 
 			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
-				String url = lineEntries.getValueAtIndex(rows[i]).fetchUrlWithCommonFormate();
+				String url = lineEntries.get(rows[i]).fetchUrlWithCommonFormate();
 				urls.add(url);
 			}
 			return urls;
@@ -513,7 +554,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			List<String> urls = new ArrayList<>();
 
 			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
-				LineEntry entry = lineEntries.getValueAtIndex(rows[i]);
+				LineEntry entry = lineEntries.get(rows[i]);
 				String url = entry.getUrl();
 				String Locationurl = entry.getHeaderValueOf(false,"Location");
 				if (url !=null){
@@ -530,7 +571,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			List<String> results = new ArrayList<>();
 
 			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
-				LineEntry entry = lineEntries.getValueAtIndex(rows[i]);
+				LineEntry entry = lineEntries.get(rows[i]);
 				String CDNAndCertInfo = entry.getCDN();
 				results.add(CDNAndCertInfo);
 			}
@@ -544,7 +585,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			List<String> results = new ArrayList<>();
 
 			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
-				LineEntry entry = lineEntries.getValueAtIndex(rows[i]);
+				LineEntry entry = lineEntries.get(rows[i]);
 				String hash = entry.getIcon_hash();
 				results.add(hash);
 			}
@@ -595,7 +636,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			//list length and index changed after every remove.the origin index not point to right item any more.
 			Arrays.sort(rows); //升序
 			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
-				LineEntry checked = lineEntries.getValueAtIndex(rows[i]);
+				LineEntry checked = lineEntries.get(rows[i]);
 				checked.setCheckStatus(status);
 				if (status.equalsIgnoreCase(LineEntry.CheckStatus_Checked)) {
 					checked.setTime(Commons.getNowTimeString());
@@ -618,8 +659,8 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 		synchronized (lineEntries) {
 			Arrays.sort(rows); //升序
 			for (int i=rows.length-1;i>=0 ;i-- ) {
-				LineEntry checked = lineEntries.getValueAtIndex(rows[i]);
-				if (assetType == checked.getAssetType()) continue;
+				LineEntry checked = lineEntries.get(rows[i]);
+				if (assetType.equalsIgnoreCase(checked.getAssetType())) continue;
 				checked.setAssetType(assetType);
 				stdout.println(String.format("$$$ %s updated [AssetType-->%s]",checked.getUrl(),assetType));
 				//this.fireTableRowsUpdated(rows[i], rows[i]);
@@ -635,7 +676,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			//list length and index changed after every remove.the origin index not point to right item any more.
 			Arrays.sort(rows); //升序
 			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
-				LineEntry checked = lineEntries.getValueAtIndex(rows[i]);
+				LineEntry checked = lineEntries.get(rows[i]);
 				checked.addComment(commentAdd);
 				//				lineEntries.remove(rows[i]);
 				//				lineEntries.add(rows[i], checked);
@@ -648,47 +689,43 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 		}
 	}
 
-	//如果记录的Host是IP，且认为不是目标资产，那么将其加入NotTarget集合
-	public void addHostToNotTargetIPSet(int[] rows) {
+	public void freshASNInfo(int[] rows) {
 		synchronized (lineEntries) {
 			//because thread let the delete action not in order, so we must loop in here.
 			//list length and index changed after every remove.the origin index not point to right item any more.
 			Arrays.sort(rows); //升序
 			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
-				LineEntry entry = lineEntries.getValueAtIndex(rows[i]);
-				String Host = entry.getHost();
-				if (Commons.isValidIP(Host)) {
-					DomainPanel.getDomainResult().getNotTargetIPSet().add(Host);
-					entry.addComment(LineEntry.NotTargetBaseOnBlackList);
-					stdout.println("### "+Host+" added to NotTargetIPSet");
-				}
+				LineEntry checked = lineEntries.get(rows[i]);
+				checked.freshASNInfo();
+				stdout.println("$$$ "+checked.getUrl()+"ASN Info updated");
 			}
+			fireUpdated(rows);
 		}
 	}
 
-	public void removeHostFromNotTargetIPSet(int[] rows) {
+	/**
+	 * 	主要用于记录CDN或者云服务的IP地址，在做网段汇算时排除这些IP。
+	 */
+	public void addIPToTargetBlackList(int[] rows) {
 		synchronized (lineEntries) {
 			//because thread let the delete action not in order, so we must loop in here.
 			//list length and index changed after every remove.the origin index not point to right item any more.
 			Arrays.sort(rows); //升序
 			for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
-				LineEntry entry = lineEntries.getValueAtIndex(rows[i]);
-				String Host = entry.getHost();
-				if (Commons.isValidIP(Host)) {
-					DomainPanel.getDomainResult().getNotTargetIPSet().remove(Host);
-					entry.removeComment(LineEntry.NotTargetBaseOnBlackList);
-					stdout.println("### "+Host+" removed from NotTargetIPSet");
-				}
+				LineEntry entry = lineEntries.get(rows[i]);
+				DomainPanel.getDomainResult().getNotTargetIPSet().addAll(entry.fetchIPSet());
+				entry.addComment(LineEntry.NotTargetBaseOnBlackList);
+				stdout.println("### IP address "+ entry.fetchIPSet().toString() +" added to black list");
 			}
 		}
 	}
 
 	/**
 	 * 获取用于Host碰撞的域名列表
-	 * 
+	 *
 	 * 1、没有解析记录的域名
 	 * 2、解析记录是内网地址的域名
-	 * 
+	 *
 	 * 3、解析是外网，但是外网无法访问的域名（比如403），但是绑定特定IP即可访问。大概率是走了不同的网关导致的.
 	 * 想要准确地获取到这个结果，那么hunter的数据应该是在外网环境中获取的。如果是hunter的数据是内网环境中获取的，就会遗漏一部分数据。
 	 * @return
@@ -704,7 +741,7 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			if (item.contains(":")) {//有可能domain:port的情况
 				item = item.split(":")[0];
 			}
-			if (Commons.isValidDomain(item)) {
+			if (DomainNameUtils.isValidDomain(item)) {
 				tmp.add(item);
 			}
 		}
@@ -712,8 +749,8 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 		Collection<LineEntry> entries = getLineEntries().values();
 		for (LineEntry entry:entries) {
 			String ip = entry.getIP().split(",")[0];//这里可能不严谨，如果IP解析既有外网地址又有内网地址就会出错
-			if (!IPAddress.isPrivateIPv4(ip)) {//移除公网解析记录；剩下无解析记录和内网解析记录
-				if (entry.getStatuscode() == 403 && Commons.isValidDomain(entry.getHost())) {
+			if (!IPAddressUtils.isPrivateIPv4(ip)) {//移除公网解析记录；剩下无解析记录和内网解析记录
+				if (entry.getStatuscode() == 403 && DomainNameUtils.isValidDomain(entry.getHost())) {
 					//do Nothing
 				}else {
 					tmp.remove(entry.getHost());
@@ -721,27 +758,6 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 			}
 		}
 		return tmp;
-	}
-
-	//当记录是非目标资产时，将其IP集合添加到NotTargetIP集合中
-	@Deprecated
-	public void addIPSetOfEntryToNotTargetIPSet(int[] rows) {
-		for (int i=rows.length-1;i>=0 ;i-- ) {
-			Set<String> IPs = lineEntries.getValueAtIndex(rows[i]).fetchIPSet();
-			DomainPanel.getDomainResult().getNotTargetIPSet().addAll(IPs);
-			stdout.println("### "+IPs.toString()+" added to black list");
-		}
-	}
-
-	//将IP集合算成C段，并加入NotTarget集合
-	@Deprecated
-	public void addSubnetBlackList(int[] rows) {
-		for (int i=rows.length-1;i>=0 ;i-- ) {
-			Set<String> IPs = lineEntries.getValueAtIndex(rows[i]).fetchIPSet();
-			Set<String> subnets = Commons.toClassCSubNets(IPs);
-			DomainPanel.getDomainResult().getNotTargetIPSet().addAll(subnets);
-			stdout.println("### "+subnets.toString()+" added to black list");
-		}
 	}
 
 	//为了同时fire多个不连续的行，自行实现这个方法。
@@ -943,18 +959,12 @@ public class LineTableModel extends AbstractTableModel implements IMessageEditor
 		return service;
 	}
 
-	public void addNewNoResponseDomain(String domain,Set<String> IPSet){
-		synchronized (noResponseDomain) {
-			noResponseDomain.put(domain,IPSet);
+	public void freshAllASNInfo(){
+		for (LineEntry entry : lineEntries.values()) {
+			entry.freshASNInfo();
 		}
+		fireTableRowsUpdated(0,lineEntries.size()-1);
 	}
-
-	public void addNewNoResponseDomain(String domain,String IPSet){
-		synchronized (noResponseDomain) {
-			noResponseDomain.put(domain,new HashSet<String>(Arrays.asList(IPSet.split(","))));
-		}
-	}
-
 
 
 

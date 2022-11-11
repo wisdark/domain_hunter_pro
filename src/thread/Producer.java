@@ -6,7 +6,7 @@ import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 
-import GUI.GUI;
+import GUI.GUIMain;
 import burp.BurpExtender;
 import burp.IBurpExtenderCallbacks;
 import burp.IExtensionHelpers;
@@ -30,7 +30,6 @@ import title.TitlePanel;
 
 public class Producer extends Thread {//Producer do
 	private final BlockingQueue<String> domainQueue;//use to store domains
-	private int threadNo;
 	private volatile boolean stopflag = false;
 
 	private static IBurpExtenderCallbacks callbacks = BurpExtender.getCallbacks();//静态变量，burp插件的逻辑中，是可以保证它被初始化的。;
@@ -39,23 +38,32 @@ public class Producer extends Thread {//Producer do
 	public IExtensionHelpers helpers = callbacks.getHelpers();
 
 	public Producer(BlockingQueue<String> domainQueue,int threadNo) {
-		this.threadNo = threadNo;
 		this.domainQueue = domainQueue;
 		stopflag= false;
+		this.setName(this.getClass().getName()+threadNo);
 	}
 
-	public void stopThread() {
-		stopflag = true;
+	public void setStopflag(boolean stop) {
+		stopflag = stop;
 	}
 
 	@Override
 	public void run() {
 		while(true){
 			try {
-				if (domainQueue.isEmpty() || stopflag) {
-					//stdout.println(threadNo+" Producer exited");
+				if (domainQueue.isEmpty() ) {
+					stdout.println(getName()+" exited. due to domainQueue is empty");
 					break;
 				}
+				if (Thread.interrupted()){//没有起作用！
+					stdout.println(getName()+" exited. due to thread interrupt signal received");
+					break;
+				}
+				if (stopflag){
+					stdout.println(getName()+" exited. due to stop flag is true");
+					break;
+				}
+
 				String host = domainQueue.take();
 				int leftTaskNum = domainQueue.size();
 
@@ -101,7 +109,7 @@ public class Producer extends Thread {//Producer do
 	}
 
 	public static LineEntry findHistory(String url) {
-		IndexedLinkedHashMap<String,LineEntry> HistoryLines = GUI.getTitlePanel().getBackupLineEntries();
+		IndexedLinkedHashMap<String,LineEntry> HistoryLines = GUIMain.getTitlePanel().getBackupLineEntries();
 		if (HistoryLines == null) return null;
 		LineEntry found = HistoryLines.get(url);
 		if (found != null) {
@@ -132,5 +140,17 @@ public class Producer extends Thread {//Producer do
 			}
 		}
 		return null;
+	}
+
+	public static void main(String[] args) {
+		int i= 0;
+		while(true) {
+			if (i >= 10) {
+				System.out.println("exited.");
+				break;
+			}
+			i++;
+		}
+		System.out.println("1111");
 	}
 }
