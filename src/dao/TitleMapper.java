@@ -7,7 +7,7 @@ import java.sql.SQLException;
 
 import org.springframework.jdbc.core.RowMapper;
 
-import burp.SetAndStr;
+import base.SetAndStr;
 import title.LineEntry;
 
 public class TitleMapper implements RowMapper<LineEntry> {
@@ -47,6 +47,8 @@ public class TitleMapper implements RowMapper<LineEntry> {
 				entry.setComments(SetAndStr.toSet(rs.getString("comments")));
 				entry.setTime(rs.getString("time"));
 				entry.setEntryTags(SetAndStr.toSet(rs.getString("EntryTags")));
+				entry.setIcon_bytes(rs.getBytes("icon_bytes"));
+				entry.setIcon_url(rs.getString("icon_url"));
 			} catch (MalformedURLException e) {
 				e.printStackTrace();
 			}

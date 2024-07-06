@@ -9,23 +9,25 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.validator.routines.EmailValidator;
 
 import com.alibaba.fastjson.JSON;
+import com.bit4woo.utilbox.utils.DomainUtils;
+import com.bit4woo.utilbox.utils.IPAddressUtils;
 import com.google.common.net.InternetDomainName;
 
+import base.Commons;
 import burp.BurpExtender;
-import burp.Commons;
-import burp.DomainNameUtils;
-import burp.IPAddressUtils;
 
 public class TargetEntry {
 	private String target = "";//根域名、网段、或者IP
 	private String type = "";
 	private String keyword = "";
-	private Set<String> AuthoritativeNameServers = new HashSet<String>();
-	private boolean ZoneTransfer = false;//域名对应的权威服务器，是否域于传送漏洞
+	private Set<String> AuthoritativeNameServers = new HashSet<>();//权威服务器
+	private boolean ZoneTransfer = false;//域名对应的权威服务器，是否存在域于传送漏洞
 	private boolean isBlack = false;//这个域名是否是黑名单根域名，需要排除的
-	private String comment = "";
+	private Set<String> comments = new HashSet<>();
 	private boolean useTLD = true;//TLD= Top-Level Domain,比如 baidu.com为true，*.m.baidu.com为false
 
 	public static final String Target_Type_Domain = "Domain";
@@ -49,40 +51,32 @@ public class TargetEntry {
 		this(input,true);
 	}
 
-
 	public TargetEntry(String input,boolean autoSub) {
 
-		String domain = DomainNameUtils.clearDomainWithoutPort(input);
-		if (DomainNameUtils.isValidDomain(domain)) {
+		String domain = DomainUtils.clearDomainWithoutPort(input);
+
+		if (EmailValidator.getInstance().isValid(domain)){
+			domain = domain.substring(domain.indexOf("@")+1);
+		}
+
+		if (DomainUtils.isValidDomainNoPort(domain)) {
 			type = Target_Type_Domain;
 
 			useTLD = autoSub;
 			if (autoSub) {
-				target = DomainNameUtils.getRootDomain(domain);
+				target = DomainUtils.getRootDomain(domain);
 			}else{
 				target = domain;
 			}
 			keyword = target.substring(0, target.indexOf("."));
-
-			/**
-			 * 假如用户手动编辑了target。那么就需要依靠刷新的操作来更新数据。所以单纯靠添加时的处理逻辑是不够的。
-			try {
-				DomainPanel.getDomainResult().getSubDomainSet().add(domain);
-				DomainPanel.getDomainResult().getRelatedDomainSet().remove(domain);//刷新时不操作相关域名集合，所有要有删除操作。
-			} catch (Exception e) {
-				e.printStackTrace();
-			}*/
-		}
-		else if (IPAddressUtils.isValidSubnet(domain)) {
+		} else if (IPAddressUtils.isValidSubnet(domain)) {
 			type = Target_Type_Subnet;
 			target = domain;
-		}
-
-		/**需要将它改造为正则表达式，去匹配域名
-		 * seller.*.example.*
-		 * seller.*.example.*
-		 */
-		else if (DomainNameUtils.isValidWildCardDomain(domain)) {
+		} else if (DomainUtils.isValidWildCardDomain(domain)) {
+			/**需要将它改造为正则表达式，去匹配域名
+			 * seller.*.example.*
+			 * seller.*.example.*
+			 */
 			type = Target_Type_Wildcard_Domain;
 			target = domain;
 
@@ -97,18 +91,6 @@ public class TargetEntry {
 			}else {
 				keyword = domainKeyword;
 			}
-
-			/**
-			 * 假如用户手动编辑了target。那么就需要依靠刷新的操作来更新数据。所以单纯靠添加时的处理逻辑是不够的。
-			HashSet<String> tmpSet = new HashSet<>(DomainPanel.getDomainResult().getRelatedDomainSet());
-			for (String tmp : tmpSet){
-				//replaceFirst的参数也是正则，能代替正则匹配？
-				if (DomainNameUtils.isMatchWildCardDomain(domain,tmp)){
-					DomainPanel.getDomainResult().getSubDomainSet().add(tmp);
-					DomainPanel.getDomainResult().getRelatedDomainSet().remove(tmp);//刷新时不操作相关域名集合，所有要有删除操作。
-				}
-			}
-			*/
 		}
 	}
 
@@ -156,21 +138,17 @@ public class TargetEntry {
 	public void setBlack(boolean isBlack) {
 		this.isBlack = isBlack;
 	}
-	public String getComment() {
-		return comment;
+	public Set<String> getComments() {
+		return comments;
 	}
-	public void setComment(String comment) {
-		this.comment = comment;
+
+	public void setComments(Set<String> comments) {
+		this.comments = comments;
 	}
 
 	public void addComment(String commentToAdd) {
-		if (commentToAdd == null || commentToAdd.trim().equals("")) return;
-
-		String comments =getComment();
-		if (!comments.contains(commentToAdd)) {
-			comments += ","+commentToAdd;
-			this.setComment(comments);
-		}
+		if (StringUtils.isEmpty(commentToAdd)) return;
+		comments.addAll(Arrays.asList(commentToAdd.split(",")));
 	}
 
 	public boolean isUseTLD() {
@@ -183,11 +161,11 @@ public class TargetEntry {
 
 	public void zoneTransferCheck() {
 		String rootDomain = InternetDomainName.from(target).topPrivateDomain().toString();
-		AuthoritativeNameServers = DomainNameUtils.GetAuthoritativeNameServer(rootDomain);
+		AuthoritativeNameServers = new HashSet<>(DomainUtils.GetAuthServer(rootDomain,null));
 		
 		for (String Server : AuthoritativeNameServers) {
 			//stdout.println("checking [Server: "+Server+" Domain: "+rootDomain+"]");
-			List<String> Records = DomainNameUtils.ZoneTransferCheck(rootDomain, Server);
+			List<String> Records = DomainUtils.ZoneTransferCheck(rootDomain, Server);
 			if (Records.size() > 0) {
 				try {
 					//stdout.println("!!! "+Server+" is zoneTransfer vulnerable for domain "+rootDomain+" !");
@@ -198,6 +176,7 @@ public class TargetEntry {
 				} catch (IOException e1) {
 					e1.printStackTrace(BurpExtender.getStderr());
 				}
+				this.addComment("AXFR!");
 			}
 		}
 	}

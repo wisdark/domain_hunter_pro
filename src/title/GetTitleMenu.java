@@ -75,7 +75,7 @@ public class GetTitleMenu extends JPopupMenu {
 		getTitleItem.setToolTipText("A fresh start for all domain name");
 
 
-		GetExtendtitleItem = new JMenuItem(new AbstractAction("Get Extend Title") {
+		GetExtendtitleItem = new JMenuItem(new AbstractAction("Get Title For Nearby Assets") {
 			@Override
 			public void actionPerformed(ActionEvent actionEvent) {
 				SwingWorker<Map, Map> worker = new SwingWorker<Map, Map>() {
@@ -101,7 +101,7 @@ public class GetTitleMenu extends JPopupMenu {
 		});
 		GetExtendtitleItem.setToolTipText("Get title of the host that in same subnet,you should do this after get domain title done!");
 
-		GettitleOfJustNewFoundItem = new JMenuItem(new AbstractAction("Get Title For New Found Domain") {
+		GettitleOfJustNewFoundItem = new JMenuItem(new AbstractAction("Get Title For New Found Assets") {
 			@Override
 			public void actionPerformed(ActionEvent actionEvent) {
 				SwingWorker<Map, Map> worker = new SwingWorker<Map, Map>() {
@@ -137,9 +137,15 @@ public class GetTitleMenu extends JPopupMenu {
 						CopySubnetItem.setEnabled(false);
 						int result = JOptionPane.showConfirmDialog(null,"Just get IP Subnets of [Current] lines ?");
 
-						int publicSubnets = JOptionPane.showConfirmDialog(null,"Just get [Pulic] IP Subnets ?");
+						int publicSubnets = JOptionPane.showConfirmDialog(null,"Do you want to Exclude [Private] IP ?");
+						
+						int excludeCDN = JOptionPane.showConfirmDialog(null,"Do you want to Exclude [CDN] IP ?");
+						
+						boolean current = result == JOptionPane.YES_OPTION?true:false;
+						boolean justPublic = publicSubnets == JOptionPane.YES_OPTION?true:false;
+						boolean noCDN = excludeCDN == JOptionPane.YES_OPTION?true:false;
 
-						String subnetsString = guiMain.getTitlePanel().getSubnet(result == JOptionPane.YES_OPTION?true:false,publicSubnets == JOptionPane.YES_OPTION?true:false);
+						String subnetsString = guiMain.getTitlePanel().getSubnet(current,justPublic,noCDN);
 
 						Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
 						StringSelection selection = new StringSelection(subnetsString);

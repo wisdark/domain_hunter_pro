@@ -20,11 +20,18 @@ import javax.swing.JTextArea;
 
 import Tools.DomainComparator;
 import Tools.LengthComparator;
+import base.Commons;
 import burp.BurpExtender;
-import burp.Commons;
-import burp.DomainNameUtils;
-import burp.IPAddressUtils;
-import title.search.SearchDork;
+import config.ConfigManager;
+import config.ConfigName;
+import title.search.SearchStringDork;
+import com.bit4woo.utilbox.utils.DomainUtils;
+import com.bit4woo.utilbox.utils.IPAddressUtils;
+import com.bit4woo.utilbox.utils.TextUtils;
+import com.bit4woo.utilbox.utils.SwingUtils;
+import com.bit4woo.utilbox.utils.SystemUtils;
+
+import utils.PortScanUtils;
 
 public class TextAreaMenu extends JPopupMenu {
 
@@ -33,16 +40,14 @@ public class TextAreaMenu extends JPopupMenu {
 	JTextArea textArea;
 	String selectedText;
 	List<String> selectedItems = new ArrayList<>();
-	private DomainPanel domainPanel;
 
 	TextAreaMenu(DomainPanel domainPanel,JTextArea textArea){
-		this.domainPanel = domainPanel;
 		this.textArea = textArea;
 		selectedText = textArea.getSelectedText();
 		if (selectedText != null && !selectedText.equalsIgnoreCase("")){
-			selectedItems = Commons.textToLines(selectedText);
+			selectedItems = TextUtils.textToLines(selectedText);
 		}
-		List<String> AllItems = Commons.getLinesFromTextArea(textArea);
+		List<String> AllItems = SwingUtils.getLinesFromTextArea(textArea);
 
 
 		try{
@@ -73,7 +78,7 @@ public class TextAreaMenu extends JPopupMenu {
 				//只会影响Domain Hunter中的选中，当选中的是proxy，使用这个方法并不能自动切换到domain hunter。
 				//stdout.println(guiMain.getRootPane().getName());//null
 				if (selectedItems.size() >0 ) {
-					domainPanel.getGuiMain().getTitlePanel().getTextFieldSearch().setText(SearchDork.HOST.toString() + ":" + selectedItems.get(0));
+					domainPanel.getGuiMain().getTitlePanel().getTextFieldSearch().setText(SearchStringDork.HOST.toString() + ":" + selectedItems.get(0));
 				}
 			}
 		});
@@ -88,9 +93,9 @@ public class TextAreaMenu extends JPopupMenu {
 					if (!item.toLowerCase().startsWith("https://") && !item.toLowerCase().startsWith("http://")) {
 						item= "https://"+item;
 					}
-					
+
 					try {
-						Commons.browserOpen(item, domainPanel.getGuiMain().getConfigPanel().getLineConfig().getBrowserPath());
+						SystemUtils.browserOpen(item, ConfigManager.getStringConfigByKey(ConfigName.BrowserPath));
 					} catch (Exception e) {
 						e.printStackTrace(stderr);
 					}
@@ -107,7 +112,7 @@ public class TextAreaMenu extends JPopupMenu {
 				for (String item:selectedItems) {
 					String url= "https://www.google.com/search?q=%22"+URLEncoder.encode(item)+"%22";
 					try {
-						Commons.browserOpen(url, null);
+						SystemUtils.browserOpen(url, null);
 					} catch (Exception e) {
 						e.printStackTrace(stderr);
 					}
@@ -124,7 +129,7 @@ public class TextAreaMenu extends JPopupMenu {
 				for (String item:selectedItems) {
 					try {
 						String url= "https://github.com/search?q=%s&type=Code";
-						String keyword= String.format("\"%s\" \"jdbc.url\"",item);
+						String keyword= String.format("\"%s\"",item);
 						URI uri = new URI(String.format(url, URLEncoder.encode(keyword)));
 						Desktop desktop = Desktop.getDesktop();
 						if(Desktop.isDesktopSupported()&&desktop.isSupported(Desktop.Action.BROWSE)){
@@ -144,7 +149,7 @@ public class TextAreaMenu extends JPopupMenu {
 				if (selectedItems.size() >=50) {
 					return;
 				}
-				DomainManager domainResult = domainPanel.getGuiMain().getDomainPanel().getDomainResult();
+				DomainManager domainResult = domainPanel.getDomainResult();
 				for (String item:selectedItems) {
 					try {
 						domainResult.addToTargetAndSubDomain(item,true);
@@ -152,7 +157,7 @@ public class TextAreaMenu extends JPopupMenu {
 						e2.printStackTrace(stderr);
 					}
 				}
-				domainPanel.getGuiMain().getDomainPanel().saveDomainDataToDB();
+				domainPanel.saveDomainDataToDB();
 			}
 		});
 
@@ -162,8 +167,8 @@ public class TextAreaMenu extends JPopupMenu {
 			public void actionPerformed(ActionEvent actionEvent) {
 				for (String item:selectedItems) {
 					try {
-						Commons.browserOpen("https://whois.chinaz.com/"+item,null);
-						Commons.browserOpen("https://www.whois.com/whois/"+item,null);
+						SystemUtils.browserOpen("https://whois.chinaz.com/"+item,null);
+						SystemUtils.browserOpen("https://www.whois.com/whois/"+item,null);
 					} catch (Exception e) {
 						e.printStackTrace();
 					}
@@ -180,17 +185,17 @@ public class TextAreaMenu extends JPopupMenu {
 						//https://bgp.he.net/net/143.92.111.0/24
 						//https://bgp.he.net/ip/143.92.127.1
 						String url =null;
-						if (IPAddressUtils.isValidIP(target)){
+						if (IPAddressUtils.isValidIPv4NoPort(target)){
 							url = "https://bgp.he.net/ip/"+target;
 						}
 						if (IPAddressUtils.isValidSubnet(target)){
 							url = "https://bgp.he.net/net/"+target;
 						}
-						if (DomainNameUtils.isValidDomain(target)){
+						if (DomainUtils.isValidDomainNoPort(target)){
 							url = "https://bgp.he.net/dns/"+target;
 						}
 						if (url!= null){
-							Commons.browserOpen(url,null);
+							SystemUtils.browserOpen(url,null);
 						}
 					} catch (Exception e) {
 						e.printStackTrace();
@@ -202,7 +207,7 @@ public class TextAreaMenu extends JPopupMenu {
 		JMenuItem removeMd5DomainItem = new JMenuItem(new AbstractAction("Remove MD5 Domain") {
 			@Override
 			public void actionPerformed(ActionEvent actionEvent) {
-				domainPanel.getGuiMain().getDomainPanel().getDomainResult().removeMd5Domain();
+				domainPanel.getDomainResult().removeMd5Domain();
 			}
 		});
 
@@ -239,10 +244,10 @@ public class TextAreaMenu extends JPopupMenu {
 		JMenuItem ReFresh = new JMenuItem(new AbstractAction("Refresh") {
 			@Override
 			public void actionPerformed(ActionEvent actionEvent) {
-				domainPanel.getGuiMain().getDomainPanel().showDataToDomainGUI();
+				domainPanel.showDataToDomainGUI();
 			}
 		});
-		
+
 		//https://blog.csdn.net/opshres169/article/details/51913713
 		JMenuItem SearchDomain = new JMenuItem(new AbstractAction("Search") {
 			int searchBegin = 0;
@@ -313,9 +318,26 @@ public class TextAreaMenu extends JPopupMenu {
 
 		SortDomain.setToolTipText("search something");
 
+
+
+		JMenuItem genPortScanCmd = new JMenuItem(new AbstractAction("Copy Port Scan Cmd") {
+			@Override
+			public void actionPerformed(ActionEvent e) {
+				try{
+					String nmapPath = ConfigManager.getStringConfigByKey(ConfigName.PortScanCmd);
+					PortScanUtils.genCmdAndCopy(nmapPath, selectedItems);
+				}
+				catch (Exception e1)
+				{
+					e1.printStackTrace(stderr);
+				}
+			}
+		});
+
 		this.add(addTosubdomain);
 		this.addSeparator();
 		//对选中内容起作用的菜单
+		this.add(genPortScanCmd);
 		this.add(whoisItem);
 		this.add(ASNInfoItem);
 		this.add(googleSearchItem);

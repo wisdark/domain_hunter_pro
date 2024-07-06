@@ -9,20 +9,23 @@ import java.util.Set;
 
 import javax.swing.table.AbstractTableModel;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.bit4woo.utilbox.utils.DomainUtils;
+import com.bit4woo.utilbox.utils.IPAddressUtils;
+import com.bit4woo.utilbox.utils.TextUtils;
 import com.google.common.net.InternetDomainName;
 import com.google.gson.Gson;
 
 import GUI.GUIMain;
+import InternetSearch.InfoTuple;
+import InternetSearch.SearchType;
+import base.IndexedHashMap;
+import base.IntArraySlice;
 import burp.BurpExtender;
-import burp.Commons;
-import burp.DomainNameUtils;
-import burp.IPAddressUtils;
-import burp.IntArraySlice;
 import domain.DomainManager;
-import title.IndexedHashMap;
 
 public class TargetTableModel extends AbstractTableModel {
 
@@ -32,7 +35,7 @@ public class TargetTableModel extends AbstractTableModel {
 	private GUIMain guiMain;
 
 	private static final transient String[] standardTitles = new String[] {
-			"Domain/Subnet", "Keyword", "Comment","Black"};
+			"#","Domain/Subnet", "Keyword", "Comment","Black"};
 	private static transient List<String> titletList = new ArrayList<>(Arrays.asList(standardTitles));
 
 	private static final transient Logger log = LogManager.getLogger(TargetTableModel.class);
@@ -41,8 +44,8 @@ public class TargetTableModel extends AbstractTableModel {
 	public static List<String> getTitleList() {
 		return titletList;
 	}
-	
-	
+
+
 	private TargetTableModel(GUIMain guiMain){
 		this.guiMain = guiMain;
 		try{
@@ -53,7 +56,7 @@ public class TargetTableModel extends AbstractTableModel {
 			stderr = new PrintWriter(System.out, true);
 		}
 	}
-	
+
 	public TargetTableModel(GUIMain guiMain,List<TargetEntry> entries){
 		this(guiMain);
 		for (TargetEntry entry:entries) {
@@ -108,6 +111,10 @@ public class TargetTableModel extends AbstractTableModel {
 		}
 		TargetEntry entry = targetEntries.get(rowIndex);
 		if (entry == null) return "";
+
+		if (columnIndex == titletList.indexOf("#")) {
+			return rowIndex;
+		}
 		if (columnIndex == titletList.indexOf("Domain/Subnet")) {
 			return entry.getTarget();
 		}
@@ -115,7 +122,7 @@ public class TargetTableModel extends AbstractTableModel {
 			return entry.getKeyword();
 		}
 		if (columnIndex == titletList.indexOf("Comment")) {
-			return entry.getComment();
+			return String.join(",", entry.getComments());
 		}
 		if (columnIndex == titletList.indexOf("Black")) {
 			return entry.isBlack();
@@ -124,12 +131,33 @@ public class TargetTableModel extends AbstractTableModel {
 	}
 
 
+	/**
+	 * 返回可以用于网络搜索引擎进行搜索地字段
+	 * @param rowIndex
+	 * @param columnIndex
+	 * @return
+	 */
+	public InfoTuple<String, String> getSearchTypeAndValue(int rowIndex, int columnIndex) {
+		if(columnIndex ==getTitleList().indexOf("Keyword")) {
+			String value = getValueAt(rowIndex,columnIndex).toString();
+			return new InfoTuple<>(SearchType.OriginalString, value);
+		}else if(columnIndex ==getTitleList().indexOf("Comment")) {
+			String value = getValueAt(rowIndex,columnIndex).toString();
+			return new InfoTuple<>(SearchType.OriginalString, value);
+		}else {
+			columnIndex =getTitleList().indexOf("Domain/Subnet");
+			String value = getValueAt(rowIndex,columnIndex).toString();
+			return new InfoTuple<>(SearchType.SubDomain, value);
+		}
+	}
+
+
 	@Override
 	public void setValueAt(Object value, int row, int col) {
 		TargetEntry entry = targetEntries.get(row);
 		if (col == titletList.indexOf("Comment")){
 			String valueStr = ((String) value).trim();
-			entry.setComment(valueStr);
+			entry.setComments(new HashSet<>(Arrays.asList(valueStr.split(","))));
 			fireTableCellUpdated(row, col);
 		}
 		if (col == titletList.indexOf("Keyword")){
@@ -159,6 +187,8 @@ public class TargetTableModel extends AbstractTableModel {
 	{
 		if (columnIndex == titletList.indexOf("Black")){
 			return boolean.class;
+		}else if (columnIndex == titletList.indexOf("#")){
+			return Integer.class;//如果返回int.class排序会有问题，why？
 		}else {
 			return String.class;
 		}
@@ -182,10 +212,10 @@ public class TargetTableModel extends AbstractTableModel {
 	 * @return
 	 */
 	public static boolean ifValid(TargetEntry entry) {
-		if (entry.getTarget() == null || entry.getTarget().equals("")) {
+		if (StringUtils.isEmpty(entry.getTarget())) {
 			return false;
 		}
-		if (entry.getType() == null || !TargetEntry.TargetTypeList.contains(entry.getType())) {
+		if (StringUtils.isEmpty(entry.getType()) || !TargetEntry.TargetTypeList.contains(entry.getType())) {
 			return false;
 		}
 		return true;
@@ -214,10 +244,10 @@ public class TargetTableModel extends AbstractTableModel {
 		TargetEntry oldentry = targetEntries.get(key);
 		if (oldentry != null) {//如果有旧的记录，就需要用旧的内容做修改
 			entry.setBlack(oldentry.isBlack());
-			entry.setComment(oldentry.getComment());
+			entry.setComments(oldentry.getComments());
 			entry.setKeyword(oldentry.getKeyword());
 		}
-		
+
 		int oldsize = targetEntries.size();
 		targetEntries.put(key,entry);
 		int rowIndex = targetEntries.IndexOfKey(key);
@@ -309,7 +339,7 @@ public class TargetTableModel extends AbstractTableModel {
 					result.add(entry.getTarget());
 				}
 			}catch (Exception e){
-				e.printStackTrace();
+				e.printStackTrace(stderr);
 			}
 		}
 		return result;
@@ -330,7 +360,7 @@ public class TargetTableModel extends AbstractTableModel {
 					result.add(entry.getTarget());
 				}
 			}catch (Exception e){
-				e.printStackTrace();
+				e.printStackTrace(stderr);
 			}
 		}
 		return result;
@@ -438,8 +468,8 @@ public class TargetTableModel extends AbstractTableModel {
 		if (domain.contains(":")) {//处理带有端口号的域名
 			domain = domain.substring(0,domain.indexOf(":"));
 		}
-		if (!(DomainNameUtils.isValidDomain(domain)||
-				IPAddressUtils.isValidIP(domain))) {
+		if (!(DomainUtils.isValidDomainNoPort(domain)||
+				IPAddressUtils.isValidIPv4NoPort(domain))) {
 			return false;
 		}
 		for (String rootdomain:fetchTargetBlackDomainSet()) {
@@ -489,7 +519,7 @@ public class TargetTableModel extends AbstractTableModel {
 				System.out.println(line);
 				BurpExtender.getStdout().println(line);
 			} catch (Exception e) {
-				e.printStackTrace();
+				e.printStackTrace(stderr);
 			}
 		}
 	}
@@ -503,10 +533,10 @@ public class TargetTableModel extends AbstractTableModel {
 	 */
 	public int assetType(String domainOrIP) {
 		try {
-			domainOrIP = DomainNameUtils.clearDomainWithoutPort(domainOrIP);
+			domainOrIP = DomainUtils.clearDomainWithoutPort(domainOrIP);
 
 			//格式校验，package那么也是符合域名的正则格式的。
-			if (!DomainNameUtils.isValidDomain(domainOrIP) && !IPAddressUtils.isValidIP(domainOrIP)) {
+			if (!DomainUtils.isValidDomainNoPort(domainOrIP) && !IPAddressUtils.isValidIPv4NoPort(domainOrIP)) {
 				debugPrint(domainOrIP,DomainManager.USELESS,"Not a valid domain or IP address");
 				return DomainManager.USELESS;
 			}
@@ -518,7 +548,7 @@ public class TargetTableModel extends AbstractTableModel {
 
 			Set<String> targetDomains = fetchTargetDomainSet();
 			for (String rootdomain:targetDomains) {
-				rootdomain  = DomainNameUtils.clearDomainWithoutPort(rootdomain);
+				rootdomain  = DomainUtils.clearDomainWithoutPort(rootdomain);
 				if (domainOrIP.endsWith("."+rootdomain)||domainOrIP.equalsIgnoreCase(rootdomain)){
 					debugPrint(domainOrIP,DomainManager.SUB_DOMAIN,"sub-domain of "+rootdomain);
 					return DomainManager.SUB_DOMAIN;
@@ -531,8 +561,8 @@ public class TargetTableModel extends AbstractTableModel {
 			}
 
 			for (String rootdomain:targetDomains) {
-				rootdomain  = DomainNameUtils.clearDomainWithoutPort(rootdomain);
-				if (DomainNameUtils.isWhiteListTLD(domainOrIP,rootdomain)) {
+				rootdomain  = DomainUtils.clearDomainWithoutPort(rootdomain);
+				if (DomainUtils.isWhiteListTLD(domainOrIP,rootdomain)) {
 					debugPrint(domainOrIP,DomainManager.TLD_DOMAIN,"TLD-domain of "+rootdomain);
 					return DomainManager.TLD_DOMAIN;
 				}
@@ -540,8 +570,8 @@ public class TargetTableModel extends AbstractTableModel {
 
 			Set<String> targetWildCardDomains = fetchTargetWildCardDomainSet();
 			for (String rootdomain:targetWildCardDomains) {
-				rootdomain  = DomainNameUtils.clearDomainWithoutPort(rootdomain);
-				if (DomainNameUtils.isMatchWildCardDomain(rootdomain,domainOrIP)){
+				rootdomain  = DomainUtils.clearDomainWithoutPort(rootdomain);
+				if (DomainUtils.isMatchWildCardDomain(rootdomain,domainOrIP)){
 					debugPrint(domainOrIP,DomainManager.SUB_DOMAIN,"sub-domain of "+rootdomain);
 					return DomainManager.SUB_DOMAIN;
 				}
@@ -561,7 +591,7 @@ public class TargetTableModel extends AbstractTableModel {
 				}
 			}
 
-			if(IPAddressUtils.isValidIP(domainOrIP)){
+			if(IPAddressUtils.isValidIPv4NoPort(domainOrIP)){
 				debugPrint(domainOrIP,DomainManager.NEED_CONFIRM_IP,"is a valid IP address, but not in target IP Set");
 				return DomainManager.NEED_CONFIRM_IP;
 			}
@@ -598,18 +628,18 @@ public class TargetTableModel extends AbstractTableModel {
 
 
 	public String getTLDDomainToAdd(String domain) {
-		domain = DomainNameUtils.clearDomainWithoutPort(domain);
+		domain = DomainUtils.clearDomainWithoutPort(domain);
 		Set<String> targetDomains = fetchTargetDomainSet();
 		for (String rootdomain : targetDomains) {
-			rootdomain = DomainNameUtils.clearDomainWithoutPort(rootdomain);
-			if (DomainNameUtils.isWhiteListTLD(domain, rootdomain)) {
+			rootdomain = DomainUtils.clearDomainWithoutPort(rootdomain);
+			if (DomainUtils.isWhiteListTLD(domain, rootdomain)) {
 				InternetDomainName suffixDomain = InternetDomainName.from(domain).publicSuffix();
 				InternetDomainName suffixRootDomain = InternetDomainName.from(rootdomain).publicSuffix();
 				if (suffixDomain != null && suffixRootDomain != null) {
 					String suffixOfDomain = suffixDomain.toString();
 					String suffixOfRootDomain = suffixRootDomain.toString();
 
-					String result = Commons.replaceLast(rootdomain, suffixOfRootDomain, suffixOfDomain);
+					String result = TextUtils.replaceLast(rootdomain, suffixOfRootDomain, suffixOfDomain);
 					return result;
 				}
 			}
@@ -630,6 +660,16 @@ public class TargetTableModel extends AbstractTableModel {
 		fireUpdated(rows);
 	}
 
+	public void clearComments(int[] rows) {
+		Arrays.sort(rows); //升序
+		for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
+			TargetEntry checked = targetEntries.get(rows[i]);
+			checked.getComments().clear();
+			guiMain.getDomainPanel().getTargetDao().addOrUpdateTarget(checked);
+		}
+		fireUpdated(rows);
+	}
+
 	private void fireUpdated(int[] rows) {
 		List<int[]> slice = IntArraySlice.slice(rows);
 		for(int[] sli:slice) {
@@ -641,21 +681,18 @@ public class TargetTableModel extends AbstractTableModel {
 	public void removeRows(int[] rows) {
 		Arrays.sort(rows); //升序
 		for (int i=rows.length-1;i>=0 ;i-- ) {//降序删除才能正确删除每个元素
-			TargetEntry checked = targetEntries.get(rows[i]);
-			targetEntries.remove(i);
-			guiMain.getDomainPanel().getTargetDao().deleteTarget(checked);
-		}
-		fireDeleted(rows);
-	}
-
-	//为了同时fire多个不连续的行，自行实现这个方法。
-	private void fireDeleted(int[] rows) {
-		List<int[]> slice = IntArraySlice.slice(rows);
-		//必须逆序，从高位index开始删除，否则删除的对象和预期不一致！！！
-		//上面得到的顺序就是从高位开始的
-		for(int[] sli:slice) {
-			System.out.println(Arrays.toString(sli));
-			this.fireTableRowsDeleted(sli[sli.length-1],sli[0]);//这里传入的值必须是低位数在前面，高位数在后面
+			try {
+				int index = rows[i];
+				TargetEntry checked = targetEntries.get(index);
+				if (checked == null) {
+					throw new ArrayIndexOutOfBoundsException("can't find item with index "+index);
+				}
+				targetEntries.remove(index);
+				guiMain.getDomainPanel().getTargetDao().deleteTarget(checked);
+				fireTableRowsDeleted(index,index);
+			} catch (Exception e) {
+				e.printStackTrace(stderr);
+			}
 		}
 	}
 

@@ -1,20 +1,24 @@
 package domain;
 
 import java.io.PrintWriter;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 
+import com.bit4woo.utilbox.utils.DomainUtils;
+import com.bit4woo.utilbox.utils.EmailUtils;
+
 import GUI.GUIMain;
+import base.Commons;
 import burp.BurpExtender;
-import burp.Commons;
-import burp.GrepUtils;
 import burp.IBurpExtenderCallbacks;
 import burp.IExtensionHelpers;
 import burp.IHttpRequestResponse;
 import burp.IHttpService;
-import config.ConfigPanel;
+import com.bit4woo.utilbox.utils.UrlUtils;
+import config.ConfigManager;
+import config.ConfigName;
 import title.LineEntry;
-import toElastic.ElasticClient;
 
 public class DomainProducer extends Thread {//Producer do
 	private final BlockingQueue<IHttpRequestResponse> inputQueue;//use to store messageInfo
@@ -29,14 +33,27 @@ public class DomainProducer extends Thread {//Producer do
 	public PrintWriter stderr = new PrintWriter(callbacks.getStderr(), true);
 	public IExtensionHelpers helpers = callbacks.getHelpers();
 	private GUIMain guiMain;
+	private boolean searchThirdPart = false;//是否搜索第三方流量，默认是否；当右键菜单进行主动搜索时，表示要搜索第三方。
 
 	public DomainProducer(GUIMain gui,BlockingQueue<IHttpRequestResponse> inputQueue,
-						  int threadNo) {
+			int threadNo,boolean searchThirdPart) {
 		this.guiMain = gui;
 		this.threadNo = threadNo;
 		this.inputQueue = inputQueue;
 		this.setName(this.getClass().getName()+threadNo);//方便调试
 		stopflag= false;
+		this.searchThirdPart  = searchThirdPart;
+	}
+
+	/**
+	 * 默认不搜索第三方流量的构造函数
+	 * @param gui
+	 * @param inputQueue
+	 * @param threadNo
+	 */
+	public DomainProducer(GUIMain gui,BlockingQueue<IHttpRequestResponse> inputQueue,
+			int threadNo) {
+		this(gui,inputQueue,threadNo,false);
 	}
 
 	public void stopThread() {
@@ -96,7 +113,7 @@ public class DomainProducer extends Thread {//Producer do
 				//当Host是一个IP地址时，它也有可能是我们的目标。如果它的证书域名又在目标中，那么它就是目标。
 				int type = DomainPanel.fetchTargetModel().assetType(Host);
 
-				if (type ==DomainManager.USELESS){
+				if (type ==DomainManager.USELESS && searchThirdPart == false){
 					continue;
 				}else if (type == DomainManager.NEED_CONFIRM_IP){
 					//当Host是一个IP，也有可能是目标，通过证书信息进一步判断。
@@ -135,24 +152,25 @@ public class DomainProducer extends Thread {//Producer do
 				}
 
 				//第三步：对所有流量都进行抓取，这样可以发现更多域名，但同时也会有很多无用功，尤其是使用者同时挖掘多个目标的时候
-				if (!Commons.uselessExtension(urlString)) {//grep domains from response and classify
+				if (!UrlUtils.uselessExtension(urlString)) {//grep domains from response and classify
 					byte[] response = messageinfo.getResponse();
 
 					if (response != null) {
 						if (response.length >= 100000000) {//避免大数据包卡死整个程序
 							response = subByte(response,0,100000000);
 						}
-						Set<String> domains = GrepUtils.grepDomain(new String(response));
+						Set<String> domains = new HashSet<>(DomainUtils.grepDomainAndPort(new String(response)));
 						//List<String> IPs = DomainProducer.grepIPAndPort(new String(response));
-						Set<String> emails = GrepUtils.grepEmail(new String(response));
+						Set<String> emails = new HashSet<>(EmailUtils.grepEmail(new String(response)));
 
 						DomainPanel.getDomainResult().addIfValid(domains);
 						//DomainPanel.getDomainResult().addIfValid(new HashSet<>(IPs));
 						DomainPanel.getDomainResult().addIfValidEmail(emails);
 					}
 				}
-
-				if (ConfigPanel.rdbtnSaveTrafficTo.isSelected()) {
+				
+				/*
+				if (ConfigManager.getBooleanConfigByKey(ConfigName.SaveTrafficToElastic)) {
 					if (type != DomainManager.USELESS && !Commons.uselessExtension(urlString)) {//grep domains from response and classify
 						if (threadNo == 9999) {
 							try {//写入elastic的逻辑，只对目标资产生效
@@ -164,7 +182,7 @@ public class DomainProducer extends Thread {//Producer do
 							}
 						}
 					}
-				}
+				}*/
 			} catch (InterruptedException error) {
 				BurpExtender.getStdout().println(this.getName() +" exits due to Interrupt signal received");
 			}catch (Exception error) {
@@ -179,7 +197,7 @@ public class DomainProducer extends Thread {//Producer do
 	 * @return
 	 */
 	public boolean isTargetByCertInfoForTarget(String shortURL) throws Exception {
-		Set<String> certDomains = CertInfo.getAllSANs(shortURL);
+		Set<String> certDomains = new CertInfo().getAlternativeDomains(shortURL);
 		for (String domain : certDomains) {
 			int type = guiMain.getDomainPanel().fetchTargetModel().assetType(domain);
 			if (type == DomainManager.SUB_DOMAIN || type == DomainManager.TLD_DOMAIN) {

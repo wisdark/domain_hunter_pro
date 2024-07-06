@@ -43,12 +43,13 @@ public class TargetControlPanel extends JPanel {
 		addButton.setToolTipText("add Top-Level domain");
 		addButton.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
-				if (domainPanel.getDomainResult() == null || domainPanel.getGuiMain().getCurrentDBFile() == null) {
+				if (domainPanel.getDomainResult() == null || BurpExtender.getDataLoadManager().getCurrentDBFile() == null) {
 					domainPanel.createOrOpenDB();
 				} else {
 					String enteredRootDomain = JOptionPane.showInputDialog("Enter Root Domain", null);
 					TargetEntry entry = new TargetEntry(enteredRootDomain);
 					if(domainPanel.fetchTargetModel().addRowIfValid(entry)){
+						domainPanel.getDomainResult().addIfValid(enteredRootDomain);
 						btnFresh.doClick();
 					}
 				}
@@ -66,6 +67,7 @@ public class TargetControlPanel extends JPanel {
 					String enteredRootDomain = JOptionPane.showInputDialog("Enter Root Domain", null);
 					TargetEntry entry = new TargetEntry(enteredRootDomain,false);
 					if(domainPanel.fetchTargetModel().addRowIfValid(entry)){
+						domainPanel.getDomainResult().addIfValid(enteredRootDomain);
 						btnFresh.doClick();
 					}
 				}
@@ -77,16 +79,11 @@ public class TargetControlPanel extends JPanel {
 		removeButton.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 
-				int[] rowindexs = domainPanel.getTargetTable().getSelectedRows();
-				for (int i = 0; i < rowindexs.length; i++) {
-					rowindexs[i] = domainPanel.getTargetTable().convertRowIndexToModel(rowindexs[i]);//转换为Model的索引，否则排序后索引不对应。
+				int[] rowindexes = domainPanel.getTargetTable().getSelectedRows();
+				for (int i = 0; i < rowindexes.length; i++) {
+					rowindexes[i] = domainPanel.getTargetTable().convertRowIndexToModel(rowindexes[i]);//转换为Model的索引，否则排序后索引不对应。
 				}
-				Arrays.sort(rowindexs);
-
-				TargetTableModel domainTableModel = domainPanel.fetchTargetModel();
-				for (int i = rowindexs.length - 1; i >= 0; i--) {
-					domainTableModel.removeRow(rowindexs[i]);
-				}
+				domainPanel.fetchTargetModel().removeRows(rowindexes);
 				// will trigger tableModel listener---due to "fireTableRowsDeleted" in removeRow function!
 			}
 		});
@@ -176,7 +173,7 @@ public class TargetControlPanel extends JPanel {
 		/**
 		 * 采用普通的行列计数，从1开始
 		 * @param row
-		 * @param colum
+		 * @param column
 		 */
 		bagLayout(int row,int column){
 			this.fill = GridBagConstraints.BOTH;

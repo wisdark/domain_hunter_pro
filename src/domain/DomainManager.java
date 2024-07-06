@@ -9,13 +9,16 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.commons.lang3.StringUtils;
+
 import com.alibaba.fastjson.JSON;
+import com.bit4woo.utilbox.utils.DomainUtils;
+import com.bit4woo.utilbox.utils.IPAddressUtils;
 import com.google.common.net.InternetDomainName;
 
 import GUI.GUIMain;
 import Tools.DomainComparator;
 import burp.BurpExtender;
-import burp.GrepUtils;
 import domain.target.TargetEntry;
 import domain.target.TargetTableModel;
 
@@ -189,8 +192,8 @@ public class DomainManager {
 
 	public String getSummary() {
 		String filename = "unknown";
-		if (guiMain.getCurrentDBFile() != null) {
-			filename = guiMain.getCurrentDBFile().getName();
+		if (BurpExtender.getDataLoadManager().getCurrentDBFile() != null) {
+			filename = BurpExtender.getDataLoadManager().getCurrentDBFile().getName();
 		}
 		int targetSum = 0;
 		try {
@@ -203,6 +206,10 @@ public class DomainManager {
 				filename, targetSum, relatedDomainSet.size(), subDomainSet.size(), similarDomainSet.size(), EmailSet.size(),
 				IPSetOfSubnet.size(),IPSetOfCert.size());
 		return tmpsummary;
+	}
+
+	public void showCount() {
+		//TODO
 	}
 
 	public boolean isEmpty() {
@@ -231,7 +238,7 @@ public class DomainManager {
 	 */
 	public boolean isChanged(){
 		String status = getSummary();
-		if (!status.equals(summary) && !summary.equals("")){
+		if (!status.equals(summary) && !StringUtils.isEmpty(summary)){
 			summary = getSummary();
 			guiMain.getDomainPanel().getLblSummary().setText(summary);
 			return true;
@@ -285,6 +292,21 @@ public class DomainManager {
 			}
 			for (String item : subDomainSet) {
 				if (item.endsWith(rootDomain)) {
+					tmplist.add(item);
+				}
+			}
+			Collections.sort(tmplist);
+			return String.join(System.lineSeparator(), tmplist);
+		}
+		return "";
+	}
+
+
+	public String fetchEmailsOf(String rootDomain) {
+		List<String> tmplist = new ArrayList<>();
+		if (fetchTargetModel().assetType(rootDomain) == DomainManager.SUB_DOMAIN) {//判断是否有效rootDomain
+			for (String item : EmailSet) {
+				if (item.endsWith("@"+rootDomain)) {
 					tmplist.add(item);
 				}
 			}
@@ -353,14 +375,16 @@ public class DomainManager {
 		};
 	}
 
-	public void addTLDToTargetAndSubDomain(String enteredRootDomain) {
-		if (enteredRootDomain == null) return;
+	public boolean addTLDToTargetAndSubDomain(String enteredRootDomain) {
+		if (enteredRootDomain == null) return false;
 		String tldDomainToAdd  = guiMain.getDomainPanel().fetchTargetModel().getTLDDomainToAdd(enteredRootDomain);
 		TargetEntry tmp = new TargetEntry(tldDomainToAdd, false);
 		guiMain.getDomainPanel().fetchTargetModel().addRowIfValid(tmp);
 		if (guiMain.getDomainPanel().fetchTargetModel().addRowIfValid(tmp)) {
 			subDomainSet.add(enteredRootDomain);
+			return true;
 		};
+		return false;
 	}
 
 	public void addIfValid(Set<String> domains) {
@@ -368,54 +392,80 @@ public class DomainManager {
 			addIfValid(domain);
 		}
 	}
+	
+	public void addIfValid(List<String> domains) {
+		for (String domain:domains) {
+			addIfValid(domain);
+		}
+	}
+
+	public boolean addIfValid(String domain_or_url) {
+		Set<String> domains = new HashSet<>(DomainUtils.grepDomainAndPort(domain_or_url));//这样以支持domain:port形式的资产
+		List<String> ips = IPAddressUtils.grepIPv4MayPort(domain_or_url);
+		domains.addAll(ips);
+
+		boolean result =false;
+		for (String item : domains) {
+			if (addIfValidWithRealDomain(item)){
+				result = true;
+			}
+		}
+		return result;
+	}
+
+
 	/**
 	 * 根据已有配置进行添加，不是强行直接添加
 	 *
 	 * @param domain
 	 * @return boolean 执行了添加返回true，没有执行添加返回false。
 	 */
-	public boolean addIfValid(String domain) {
-		Set<String> domains = GrepUtils.grepDomain(domain);//这样以支持domain:port形式的资产
-		List<String> ips = GrepUtils.grepIPAndPort(domain);
-		if (domains.size() !=0 ){
-			domain = new ArrayList<String>(domains).get(0);
-		} else if(ips.size() !=0){
-			domain = ips.get(0);
-		}else{
-			return false;
-		}
-
+	private boolean addIfValidWithRealDomain(String domain) {
 		int type = fetchTargetModel().assetType(domain);
 
 		if (type !=DomainManager.USELESS && type!= DomainManager.NEED_CONFIRM_IP){
-			BurpExtender.getStdout().println("Target Asset Found: "+domain);
+			//BurpExtender.getStdout().println("Target Asset Found: "+domain);
+			//use when debug
+		}else {
+			return false;
 		}
+
 		if (type == DomainManager.TLD_DOMAIN) {
 			//应当先做TLD域名的添加，这样可以丰富Root域名，避免数据损失遗漏
 			//这里的rootDomain不一定是topPrivate。比如 shopeepay.shopee.sg 和shopeepay.shopee.io
 			//这个时候就不能自动取topPrivate。
-			addTLDToTargetAndSubDomain(domain);
-			return true;
+			if (addTLDToTargetAndSubDomain(domain)) {
+				BurpExtender.getStdout().println("Target Asset Found: "+domain);
+				return true;
+			};
 		} else if (type == DomainManager.SUB_DOMAIN) {//包含手动添加的IP
-			subDomainSet.add(domain);//子域名可能来自相关域名和相似域名。
+			if (subDomainSet.add(domain)) {
+				BurpExtender.getStdout().println("Target Asset Found: "+domain);
+				return true;
+			}//子域名可能来自相关域名和相似域名。
 			//gettitle的逻辑中默认会请求80、443，所以无需再添加不包含端口的记录
-			return true;
 		} else if (type == DomainManager.SIMILAR_DOMAIN) {
-			similarDomainSet.add(domain);
-			return true;
+			if (similarDomainSet.add(domain)) {
+				BurpExtender.getStdout().println("Target Asset Found: "+domain);
+				return true;
+			};
 		} else if (type == DomainManager.PACKAGE_NAME) {
-			PackageNameSet.add(domain);
-			return true;
+			if (PackageNameSet.add(domain)) {
+				BurpExtender.getStdout().println("Target Asset Found: "+domain);
+				return true;
+			};
 		} else if (type == DomainManager.IP_ADDRESS){
-			IPSetOfSubnet.add(domain);
-			return true;
+			if (IPSetOfSubnet.add(domain)) {
+				BurpExtender.getStdout().println("Target Asset Found: "+domain);
+				return true;
+			};
 			//不再直接添加收集到但是无法确认所属关系的IP，误报太高
 			//		} else if (type == DomainManager.NEED_CONFIRM_IP){
 			//			SpecialPortTargets.add(domain);
 			//			return true;
-		}else{
-			return false;
-		}//Email的没有处理
+		}
+		return false;
+		//Email的没有处理
 	}
 
 
@@ -425,6 +475,11 @@ public class DomainManager {
 		}
 	}
 
+	public void addIfValidEmail(List<String> emails) {
+		for (String email:emails) {
+			addIfValidEmail(email);
+		}
+	}
 
 	/**
 	 * 根据已有配置进行添加，不是强行直接添加
@@ -462,8 +517,8 @@ public class DomainManager {
 	 * 新增的刷新逻辑还可以简化，子域名等无需再次分析。
 	 */
 	public void freshBaseRule() {
-		guiMain.getDomainPanel().backupDB("before refresh");
-		BurpExtender.getStdout().println("before refresh--> "+getSummary());
+		//		guiMain.getDomainPanel().backupDB("before refresh");
+		//		BurpExtender.getStdout().println("before refresh--> "+getSummary());
 
 		Set<String> tmpDomains = new HashSet<>();
 		//tmpDomains.addAll(relatedDomainSet);
@@ -564,14 +619,14 @@ public class DomainManager {
 		enteredRootDomain = InternetDomainName.from(enteredRootDomain).topPrivateDomain().toString();
 		System.out.println(enteredRootDomain);
 	}
-	
+
 	/**
 	 *  CopyOnWriteArraySet 用iterator的remove反而会出错
 	 */
 	public static void test2() {
 		CopyOnWriteArraySet<String> subDomainSet = new CopyOnWriteArraySet<String>();
 		subDomainSet.add("e53cf27d3dad22ae36aff189d90f0fbf.aaa.com");
-		
+
 		for (String item:subDomainSet) {
 			String md5 = isMd5Domain(item);//md5的值加上一个点
 			if (md5.length() == 33) {

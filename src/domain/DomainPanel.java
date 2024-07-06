@@ -18,13 +18,10 @@ import java.net.URI;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import javax.swing.JButton;
 import javax.swing.JLabel;
@@ -37,22 +34,24 @@ import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.border.EmptyBorder;
 
+import com.bit4woo.utilbox.utils.SystemUtils;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.bit4woo.utilbox.utils.EmailUtils;
 import com.google.common.net.InternetDomainName;
 
 import GUI.GUIMain;
 import GUI.JScrollPanelWithHeader;
+import base.Commons;
+import base.dbFileChooser;
 import burp.BurpExtender;
-import burp.Commons;
 import burp.IBurpExtenderCallbacks;
 import burp.IHttpRequestResponse;
 import burp.IHttpService;
 import burp.IScanIssue;
-import burp.GrepUtils;
-import config.ConfigPanel;
 import dao.DomainDao;
 import dao.TargetDao;
 import domain.target.TargetControlPanel;
@@ -60,7 +59,6 @@ import domain.target.TargetEntry;
 import domain.target.TargetTable;
 import domain.target.TargetTableModel;
 import thread.ThreadSearhDomain;
-import toElastic.VMP;
 
 /*
  *注意，所有直接对DomainObject中数据的修改，都不会触发该tableChanged监听器。
@@ -233,13 +231,13 @@ public class DomainPanel extends JPanel {
 		HeaderPanel.add(btnSaveDomainOnly);
 
 
-		JButton test = new JButton("test");
-		test.setToolTipText("Only save data in Domain Panel");
-		test.addActionListener(new ActionListener() {
+		JButton rename = new JButton("Rename");
+		rename.setToolTipText("Rename DB File");
+		rename.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
-				guiMain.stopLiveCapture();
+				renameDB();
 			}});
-		HeaderPanel.add(test);
+		HeaderPanel.add(rename);
 
 
 
@@ -311,7 +309,7 @@ public class DomainPanel extends JPanel {
 						//System.out.println("xxx"+keywords.toString());
 						btnSearch.setEnabled(false);
 						collectEmailFromIssue();
-						return search(rootDomains, keywords);
+						return search(null,rootDomains, keywords,false);
 					}
 
 					@Override
@@ -369,32 +367,6 @@ public class DomainPanel extends JPanel {
 		btnCrawl.setToolTipText("Crawl all subdomains recursively,This may take a long time and large Memory Usage!!!");
 		HeaderPanel.add(btnCrawl);
 
-
-		JButton btnZoneTransferCheck = new JButton("AXFR");
-		btnZoneTransferCheck.setToolTipText("Zone Transfer Check");
-		btnZoneTransferCheck.addActionListener(new ActionListener() {
-			public void actionPerformed(ActionEvent e) {
-
-				SwingWorker<Map, Map> worker = new SwingWorker<Map, Map>() {
-					@Override
-					protected Map doInBackground() throws Exception {
-						stdout.println("~~~~~~~~~~~~~Zone Transfer Checking~~~~~~~~~~~~~");
-						btnZoneTransferCheck.setEnabled(false);
-						fetchTargetModel().ZoneTransferCheckAll();
-						return null;
-					}
-
-					@Override
-					protected void done() {
-						btnZoneTransferCheck.setEnabled(true);
-						stdout.println("~~~~~~~~~~~~~Zone Transfer Check Done~~~~~~~~~~~~~");
-					}
-				};
-				worker.execute();
-			}
-		});
-		HeaderPanel.add(btnZoneTransferCheck);
-
 		JButton btnBuckupDB = new JButton("Backup DB");
 		btnBuckupDB.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
@@ -404,8 +376,15 @@ public class DomainPanel extends JPanel {
 		HeaderPanel.add(btnBuckupDB);
 
 
+		JButton btnRemoveDB = new JButton("remove DB");
+		btnRemoveDB.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				removeDB();
+			}
+		});
+		HeaderPanel.add(btnRemoveDB);
 
-
+		/*
 		JButton btnUpload = new JButton("Upload");
 		btnUpload.setToolTipText("upload data to Server");
 		btnUpload.addActionListener(new ActionListener() {
@@ -414,12 +393,12 @@ public class DomainPanel extends JPanel {
 					@Override
 					protected Boolean doInBackground() throws Exception {
 						btnUpload.setEnabled(false);
-						String url = guiMain.getConfigPanel().getLineConfig().getUploadUrl();
+						String url = ConfigManager.getStringConfigByKey(ConfigName.UploadApiURL);;
 						String host = new URL(url).getHost();
-						String token = ConfigPanel.textFieldUploadApiToken.getText().trim();
+						String token = ConfigManager.getStringConfigByKey(ConfigName.UploadApiToken).trim();
 						HashMap<String, String> headers = new HashMap<String, String>();
 						headers.put("Content-Type", "application/json;charset=UTF-8");
-						if (token != null && !token.equals("")) {//vmp
+						if (StringUtils.isNotEmpty(token)) {//vmp
 							headers.put("Authorization", "Token " + token);
 						}
 						if (host.startsWith("vmp.test.shopee.") ||
@@ -441,6 +420,7 @@ public class DomainPanel extends JPanel {
 			}
 		});
 		HeaderPanel.add(btnUpload);
+		*/
 
 
 		////////////////////////////////////Body Panel area///////////////////////////////////////////////////////
@@ -540,7 +520,7 @@ public class DomainPanel extends JPanel {
 			public void mouseClicked(MouseEvent e) {
 				if (SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 2) {//左键双击
 					try {
-						Commons.OpenFolder(guiMain.getCurrentDBFile().getParent());
+						SystemUtils.OpenFolder(BurpExtender.getDataLoadManager().getCurrentDBFile().getParent());
 					} catch (Exception e2) {
 						e2.printStackTrace(stderr);
 					}
@@ -553,7 +533,7 @@ public class DomainPanel extends JPanel {
 			@Override
 			public void mouseEntered(MouseEvent e) {
 				lblSummary.setForeground(Color.RED);
-				lblSummary.setToolTipText(guiMain.getCurrentDBFile().toString());
+				lblSummary.setToolTipText(BurpExtender.getDataLoadManager().getCurrentDBFile().toString());
 			}
 
 			@Override
@@ -618,10 +598,10 @@ public class DomainPanel extends JPanel {
 	 */
 	public void saveDomainDataToDB() {
 		try {
-			File file = guiMain.getCurrentDBFile();
+			File file = BurpExtender.getDataLoadManager().getCurrentDBFile();
 			if (file == null || !file.exists()) {
-				file = guiMain.dbfc.dialog(false,".db");
-				guiMain.setCurrentDBFile(file);
+				file = new dbFileChooser().dialog(false,".db");
+				BurpExtender.getDataLoadManager().setCurrentDBFile(file);
 			}
 			DomainDao dao = new DomainDao(file.toString());
 			dao.saveDomainManager(domainResult);
@@ -663,15 +643,20 @@ public class DomainPanel extends JPanel {
 	/*
     执行完成后，就已将数据保存到了domainResult
 	 */
-	public Map<String, Set<String>> search(Set<String> rootdomains, Set<String> keywords) {
-		IBurpExtenderCallbacks callbacks = BurpExtender.getCallbacks();
-		IHttpRequestResponse[] messages = callbacks.getSiteMap(null);
+	public Map<String, Set<String>> search(List<IHttpRequestResponse> AllMessages, Set<String> rootdomains, Set<String> keywords,boolean searchThirdPart) {
 
-		List<IHttpRequestResponse> AllMessages = new ArrayList<IHttpRequestResponse>();
-		AllMessages.addAll(Arrays.asList(messages));
-		AllMessages.addAll(collectPackageNameMessages());//包含错误回显的请求响应消息
+		if (AllMessages ==null) {
+			AllMessages = new ArrayList<IHttpRequestResponse>();
 
-		ThreadSearhDomain searchinstance = new ThreadSearhDomain(guiMain,AllMessages);
+			IBurpExtenderCallbacks callbacks = BurpExtender.getCallbacks();
+			IHttpRequestResponse[] messages = callbacks.getSiteMap(null);
+
+			AllMessages.addAll(Arrays.asList(messages));
+			AllMessages.addAll(collectPackageNameMessages());//包含错误回显的请求响应消息
+		}
+
+
+		ThreadSearhDomain searchinstance = new ThreadSearhDomain(guiMain,AllMessages,searchThirdPart);
 		searchinstance.start();
 		try {
 			searchinstance.join();
@@ -682,6 +667,33 @@ public class DomainPanel extends JPanel {
 		return null;
 	}
 
+	/**
+	 * 通过SwingWorker在后台执行搜索,用于右键菜单主动执行搜索，目的就是从第三方流量中提取信息，比如第三方企业邮箱
+	 */
+	public void searchBackground(List<IHttpRequestResponse> AllMessages) {
+		SwingWorker<Map, Map> worker = new SwingWorker<Map, Map>() {
+			//using SwingWorker to prevent blocking burp main UI.
+			@Override
+			protected Map doInBackground() throws Exception {
+				Set<String> rootDomains = fetchTargetModel().fetchTargetDomainSet();
+				Set<String> keywords = fetchTargetModel().fetchKeywordSet();
+				return search(AllMessages,rootDomains, keywords,true);//搜索第三方流量
+			}
+
+			@Override
+			protected void done() {
+				try {
+					get();
+					showDataToDomainGUI();
+					saveDomainDataToDB();
+				} catch (Exception e) {
+					e.printStackTrace(stderr);
+				}
+			}
+		};
+		worker.execute();
+	}
+
 
 	/**
 	 * 从issue中提取Email
@@ -689,15 +701,11 @@ public class DomainPanel extends JPanel {
 	 */
 	public void collectEmailFromIssue() {
 		IScanIssue[] issues = BurpExtender.getCallbacks().getScanIssues(null);
-
-		Pattern pDomainNameOnly = Pattern.compile(GrepUtils.REGEX_EMAIL);
-
 		for (IScanIssue issue : issues) {
 			if (issue.getIssueName().equalsIgnoreCase("Email addresses disclosed")) {
 				String detail = issue.getIssueDetail();
-				Matcher matcher = pDomainNameOnly.matcher(detail);
-				while (matcher.find()) {//多次查找
-					String email = matcher.group();
+				List<String> emails = EmailUtils.grepEmail(detail);
+				for (String email:emails) {
 					if (fetchTargetModel().emailType(email) == DomainManager.CERTAIN_EMAIL) {
 						domainResult.getEmailSet().add(email);
 					}
@@ -727,14 +735,14 @@ public class DomainPanel extends JPanel {
 		int i = 0;
 		while (i <= 2) {
 			for (String rootdomain : rootdomains) {
-				if (!rootdomain.contains(".") || rootdomain.endsWith(".") || rootdomain.equals("")) {
+				if (!rootdomain.contains(".") || rootdomain.endsWith(".") || StringUtils.isEmpty(rootdomain)) {
 					//如果域名为空，或者（不包含.号，或者点号在末尾的）
 				} else {
 					IBurpExtenderCallbacks callbacks = BurpExtender.getCallbacks();
 					IHttpRequestResponse[] items = callbacks.getSiteMap(null); //null to return entire sitemap
 					//int len = items.length;
 					//stdout.println("item number: "+len);
-					Set<URL> NeedToCrawl = new HashSet<URL>();
+					Set<URL> NeedToCrawl = new HashSet<>();
 					for (IHttpRequestResponse x : items) {// 经过验证每次都需要从头开始遍历，按一定offset获取的数据每次都可能不同
 
 						IHttpService httpservice = x.getHttpService();
@@ -777,7 +785,7 @@ public class DomainPanel extends JPanel {
 			i++;
 		}
 
-		return search(rootdomains, keywords);
+		return search(null,rootdomains, keywords,false);
 	}
 
 
@@ -786,7 +794,7 @@ public class DomainPanel extends JPanel {
 	 */
 	public File saveDomainOnly() {
 		try {
-			File file = guiMain.dbfc.dialog(false,".db");
+			File file = new dbFileChooser().dialog(false,".db");
 			if (file != null) {
 				DomainDao dao = new DomainDao(file.toString());
 				TargetDao dao1 = new TargetDao(file.toString());
@@ -812,18 +820,11 @@ public class DomainPanel extends JPanel {
 		domainResult.getSummary();
 	}
 
-	public static Set<String> getSetFromTextArea(JTextArea textarea) {
-		//user input maybe use "\n" in windows, so the System.lineSeparator() not always works fine!
-		Set<String> domainList = new HashSet<>(Arrays.asList(textarea.getText().replaceAll(" ", "").replaceAll("\r\n", "\n").split("\n")));
-		domainList.remove("");
-		return domainList;
-	}
-
 	public void backupDB(String keyword) {
-		File file = guiMain.getCurrentDBFile();
+		File file = BurpExtender.getDataLoadManager().getCurrentDBFile();
 		if (file == null) return;
 		String suffix = ".bak" + Commons.getNowTimeString();
-		if (keyword!=null && !keyword.equals("")) {
+		if (!StringUtils.isEmpty(keyword)) {
 			keyword = keyword.replaceAll("\\s+", "-");
 			suffix += keyword;
 		}
@@ -833,6 +834,43 @@ public class DomainPanel extends JPanel {
 			BurpExtender.getStdout().println("DB File Backed Up:" + bakfile.getAbsolutePath());
 		} catch (IOException e1) {
 			e1.printStackTrace(BurpExtender.getStderr());
+		}
+	}
+	
+	public void removeDB() {
+		File file = BurpExtender.getDataLoadManager().getCurrentDBFile();
+		if (file == null) return;
+		try {
+			int result = JOptionPane.showConfirmDialog(null,"Are you sure to DELETE this DB file ?");
+			if (result == JOptionPane.YES_OPTION) {
+				FileUtils.delete(file);
+				BurpExtender.getStdout().println("DB File Removed:" + file.getAbsolutePath());
+			}
+		} catch (IOException e1) {
+			e1.printStackTrace(BurpExtender.getStderr());
+		}
+	}
+
+	public void renameDB() {
+		File file = BurpExtender.getDataLoadManager().getCurrentDBFile();
+		if (file == null) return;
+		
+		String currentName = file.getName();
+		String currentPath = file.getParent();
+
+		//File newFile = new dbFileChooser().dialog(false,".db");//通过保存对话指定文件，这会是一个空文件。
+		String newFilename = JOptionPane.showInputDialog("Enter New DB File Name", currentName);
+
+		if (null != newFilename) {
+			try {
+				File newFile = new File(currentPath+File.separator+newFilename);
+				FileUtils.moveFile(file, newFile);
+				if (newFile.exists()) {
+					BurpExtender.getDataLoadManager().loadDbfileToHunter(newFile.toString());
+				}
+			} catch (IOException e) {
+				e.printStackTrace(stderr);
+			}
 		}
 	}
 

@@ -9,8 +9,9 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.rowset.SqlRowSet;
 
+import base.IndexedHashMap;
+import base.SetAndStr;
 import domain.target.TargetEntry;
-import title.IndexedHashMap;
 
 public class TargetDao {
 
@@ -59,7 +60,7 @@ public class TargetDao {
 					+ " values(?,?,?,?,?,?,?)";
 
 		int result = jdbcTemplate.update(sql, entry.getTarget(),entry.getType(),entry.getKeyword(),entry.isZoneTransfer(),
-				entry.isBlack(),entry.getComment(),entry.isUseTLD());
+				entry.isBlack(),SetAndStr.toStr(entry.getComments()),entry.isUseTLD());
 
 		return result > 0;
 	}
@@ -90,7 +91,8 @@ public class TargetDao {
 	 * @return
 	 */
 	public List<TargetEntry> selectAll(){
-		String sql = "select * from TargetTable";
+		String sql = "select * from TargetTable order by ID";
+		//在SQL中，如果你没有显式地指定排序规则（使用ORDER BY子句），那么结果的顺序是不确定的
 		return jdbcTemplate.query(sql,new TargetMapper());
 	}
 
@@ -154,23 +156,23 @@ public class TargetDao {
 	 */
 	@Deprecated
 	public boolean deleteByID(int id) {
-		String sql = "delete from Target where ID=?";
+		String sql = "delete from TargetTable where ID=?";
 		return jdbcTemplate.update(sql, id) > 0;
 	}
 	
 	public boolean deleteByTarget(String targetDomain) {
-		String sql = "delete from Target where target=?";
+		String sql = "delete from TargetTable where target=?";
 		return jdbcTemplate.update(sql, targetDomain) > 0;
 	}
 	
 	public boolean deleteTarget(TargetEntry entry) {
-		String sql = "delete from Target where target=?";
+		String sql = "delete from TargetTable where target=?";
 		return jdbcTemplate.update(sql, entry.getTarget()) > 0;
 	}
 
 
 	public int getRowCount(){
-		String sql = "select count(*) from Target";
+		String sql = "select count(*) from TargetTable";
 		return jdbcTemplate.queryForObject(
 				sql, Integer.class);
 	}
