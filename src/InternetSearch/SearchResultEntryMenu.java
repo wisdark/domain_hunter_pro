@@ -11,12 +11,13 @@ import javax.swing.JPopupMenu;
 import javax.swing.SwingWorker;
 
 import com.bit4woo.utilbox.utils.SystemUtils;
+import com.bit4woo.utilbox.utils.TextUtils;
 
 import GUI.GUIMain;
-import base.Commons;
 import burp.BurpExtender;
 import config.ConfigManager;
 import config.ConfigName;
+import domain.target.AssetTrustLevel;
 import utils.PortScanUtils;
 
 public class SearchResultEntryMenu extends JPopupMenu {
@@ -92,6 +93,21 @@ public class SearchResultEntryMenu extends JPopupMenu {
 			}
 		});
 
+		JMenuItem copyRootDomainItem = new JMenuItem(new AbstractAction("Copy Root Domain") {
+			@Override
+			public void actionPerformed(ActionEvent actionEvent) {
+				try{
+					java.util.List<String> rootDomains = searchTableModel.getMultipleValue(modelRows,SearchTableHead.RootDomain);
+					rootDomains = TextUtils.deduplicate(rootDomains);
+					String textUrls = String.join(System.lineSeparator(), rootDomains);
+					SystemUtils.writeToClipboard(textUrls);
+				}
+				catch (Exception e1)
+				{
+					e1.printStackTrace(stderr);
+				}
+			}
+		});
 
 		JMenuItem genPortScanCmd = new JMenuItem(new AbstractAction("Copy Port Scan Cmd") {
 
@@ -149,7 +165,29 @@ public class SearchResultEntryMenu extends JPopupMenu {
 						return null;
 					}
 				}.execute();
-
+			}
+		});
+		
+		JMenuItem addToTargetConfirmItem = new JMenuItem(new AbstractAction("Add Host/Domain To Target (Confirm Level)") {
+			@Override
+			public void actionPerformed(ActionEvent actionEvent) {
+				new SwingWorker(){
+					@Override
+					protected Object doInBackground() throws Exception {
+						try{
+							List<SearchResultEntry> entries = searchTableModel.getEntries(modelRows);
+							for (SearchResultEntry entry:entries) {
+								entry.AddToTarget(AssetTrustLevel.Confirm);
+							}
+							guiMain.getDomainPanel().saveDomainDataToDB();
+						}
+						catch (Exception e1)
+						{
+							e1.printStackTrace(stderr);
+						}
+						return null;
+					}
+				}.execute();
 			}
 		});
 
@@ -159,9 +197,11 @@ public class SearchResultEntryMenu extends JPopupMenu {
 
 		//常用多选操作
 		this.add(addToTargetItem);
+		this.add(addToTargetConfirmItem);
 		this.add(copyUrlItem);
 		this.add(copyHostItem);
 		this.add(copyIPItem);
+		this.add(copyRootDomainItem);
 		this.add(openURLwithBrowserItem);
 		this.add(genPortScanCmd);
 
