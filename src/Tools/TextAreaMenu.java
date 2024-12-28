@@ -6,18 +6,23 @@ import java.util.List;
 
 import javax.swing.AbstractAction;
 import javax.swing.JMenuItem;
+import javax.swing.JOptionPane;
 import javax.swing.JPopupMenu;
 import javax.swing.JTextArea;
+
+import org.apache.commons.lang3.StringUtils;
 
 import com.bit4woo.utilbox.utils.IPAddressUtils;
 import com.bit4woo.utilbox.utils.TextUtils;
 
 import GUI.GUIMain;
-import InternetSearch.SearchPanel;
+import InternetSearch.APISearchAction;
+import InternetSearch.SearchEngine;
 import burp.BurpExtender;
 import config.ConfigManager;
 import config.ConfigName;
 import domain.DomainManager;
+import domain.target.AssetTrustLevel;
 import utils.PortScanUtils;
 
 public class TextAreaMenu extends JPopupMenu {
@@ -115,13 +120,62 @@ public class TextAreaMenu extends JPopupMenu {
 				guiMain.getDomainPanel().saveDomainDataToDB();
 			}
 		});
+		
+		
+		JMenuItem addToTargetConfirm = new JMenuItem(new AbstractAction("Add To Target(Confirm)") {
+			@Override
+			public void actionPerformed(ActionEvent actionEvent) {
+				DomainManager domainResult = guiMain.getDomainPanel().getDomainResult();
+				for (String item:selectedItems) {
+					try {
+						if (IPAddressUtils.isValidIPv4MayPort(item)) {
+							domainResult.getSpecialPortTargets().add(item);
+						}else {
+							domainResult.addToTargetAndSubDomain(item,true,AssetTrustLevel.Confirm);
+						}
+					} catch (Exception e2) {
+						e2.printStackTrace(stderr);
+					}
+				}
+				guiMain.getDomainPanel().saveDomainDataToDB();
+			}
+		});
+		
+		
+		JMenuItem addToTargetWithComment = new JMenuItem(new AbstractAction("Add To Target With Comment") {
+			@Override
+			public void actionPerformed(ActionEvent actionEvent) {
+
+				String comment = JOptionPane.showInputDialog("Comment", "");
+				if (StringUtils.isBlank(comment)) {
+					return;
+				}
+
+				DomainManager domainResult = guiMain.getDomainPanel().getDomainResult();
+				for (String item:selectedItems) {
+					try {
+						if (IPAddressUtils.isValidIPv4MayPort(item)) {
+							domainResult.getSpecialPortTargets().add(item);
+						}else {
+							domainResult.addToTargetAndSubDomain(item,true,AssetTrustLevel.Confirm,comment);
+						}
+					} catch (Exception e2) {
+						e2.printStackTrace(stderr);
+					}
+				}
+				guiMain.getDomainPanel().saveDomainDataToDB();
+			}
+		});
 
 		JMenuItem doOnlineSearch = new JMenuItem(new AbstractAction("Do Online Search") {
 			@Override
 			public void actionPerformed(ActionEvent actionEvent) {
 				for (String item:selectedItems) {
 					try {
-						SearchPanel.searchAtBackground(item);
+						//逻辑和search按钮一样 InternetSearch.SearchPanel.createButtonPanel()
+
+						APISearchAction.DoSearchAllInOnAtBackGround(null, item, SearchEngine.getAssetSearchEngineList());
+						
 					} catch (Exception e2) {
 						e2.printStackTrace(stderr);
 					}
@@ -131,6 +185,8 @@ public class TextAreaMenu extends JPopupMenu {
 		
 		this.add(genPortScanCmd);
 		this.add(addToTarget);
+		this.add(addToTargetConfirm);
+		this.add(addToTargetWithComment);
 		this.add(doOnlineSearch);
 	}
 }

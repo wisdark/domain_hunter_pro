@@ -19,6 +19,7 @@ import com.google.common.net.InternetDomainName;
 
 import base.Commons;
 import burp.BurpExtender;
+import domain.DomainManager;
 
 public class TargetEntry {
 	private String target = "";//根域名、网段、或者IP
@@ -30,6 +31,7 @@ public class TargetEntry {
 	private Set<String> comments = new HashSet<>();
 	private boolean useTLD = true;//TLD= Top-Level Domain,比如 baidu.com为true，*.m.baidu.com为false
 	private String trustLevel = AssetTrustLevel.Maybe;
+	private int subdomainCount = 0;
 
 	public static final String Target_Type_Domain = "Domain";
 	public static final String Target_Type_Wildcard_Domain = "WildcardDomain"; //
@@ -53,12 +55,43 @@ public class TargetEntry {
 		this(input,true);
 	}
 	
+	public TargetEntry(String input,boolean autoSub,String trustLevel,String comment) {
+		this(input,autoSub);
+		if (AssetTrustLevel.getLevelList().contains(trustLevel) && !this.trustLevel.equals(AssetTrustLevel.Cloud)) {
+			this.setTrustLevel(trustLevel);
+		}else {
+			//已经有默认初始值了，无需再设置
+		}
+		addComment(comment);
+	}
+	
 	public TargetEntry(String input,boolean autoSub,String trustLevel) {
 		this(input,autoSub);
 		if (AssetTrustLevel.getLevelList().contains(trustLevel)) {
 			this.setTrustLevel(trustLevel);
 		}else {
 			//已经有默认初始值了，无需再设置
+		}
+	}
+	
+	private void autoDetectTrustLevel() {
+		//resources/cloud_service_domain_names.txt
+		String domains = "aliyun.com\r\n"
+				+ "aliyuncs.com\r\n"
+				+ "amazon.com\r\n"
+				+ "amazonaws.com\r\n"
+				+ "huaweicloud.com\r\n"
+				+ "myhuaweicloud.com\r\n"
+				+ "hwclouds-dns.com\r\n"
+				+ "myqcloud.com\r\n"
+				+ "tencent.com\r\n"
+				+ "tencentcloudapi.com\r\n"
+				+ "cloudfront.net";
+		for (String item:domains.split("\r\n")) {
+			if (target.toLowerCase().trim().endsWith(item)) {
+				this.setTrustLevel(AssetTrustLevel.Cloud);
+				break;
+			}
 		}
 	}
 
@@ -103,6 +136,7 @@ public class TargetEntry {
 				keyword = domainKeyword;
 			}
 		}
+		autoDetectTrustLevel();
 	}
 
 
@@ -167,7 +201,7 @@ public class TargetEntry {
 	}
 
 	public void addComment(String commentToAdd) {
-		if (StringUtils.isEmpty(commentToAdd)) return;
+		if (StringUtils.isBlank(commentToAdd)) return;
 		comments.addAll(Arrays.asList(commentToAdd.split(",")));
 	}
 
@@ -193,6 +227,39 @@ public class TargetEntry {
 	
 	public String switchTrustLevel() {
 		return trustLevel =  AssetTrustLevel.getNextLevel(trustLevel);
+	}
+	
+
+	public int getSubdomainCount() {
+		return subdomainCount;
+	}
+
+	public void setSubdomainCount(int subdomainCount) {
+		this.subdomainCount = subdomainCount;
+	}
+	
+	
+	public void countSubdomain(Set<String> domains) {
+		this.subdomainCount = 0;
+		if (this.type.equals(Target_Type_Domain)) {
+			for (String domain:domains) {
+				if (domain.endsWith("." + this.target) || domain.equalsIgnoreCase(this.target)) {
+					this.subdomainCount++;
+				}
+			}
+		}
+		
+		if (this.type.equals(Target_Type_Wildcard_Domain)) {
+			for (String domain:domains) {
+				if (DomainUtils.isMatchWildCardDomain(this.target, domain)) {
+					this.subdomainCount++;
+				}
+			}
+		}
+
+		if (this.type.equals(Target_Type_Subnet)) {
+			this.subdomainCount =IPAddressUtils.toIPList(this.target).size();
+		}
 	}
 
 	public void zoneTransferCheck() {

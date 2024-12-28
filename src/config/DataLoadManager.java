@@ -216,10 +216,10 @@ public class DataLoadManager {
 			String newName = String.format(BurpExtender.getExtenderName()+" [%s]",name);
 
 			BurpExtender.getCallbacks().setExtensionName(newName); //新插件名称
-			gui.getProjectMenu().AddDBNameMenuItem(name);
-			gui.getProjectMenu().AddDBNameTab(name);
-			//gui.repaint();//NO need
-
+			
+			//gui.getProjectMenu().displayDBNameAtProjectMenu(name);
+			//gui.getProjectMenu().displayDBNameAtProjectMenuItem(name);
+			gui.getProjectMenu().displayDBNameAtDomainTab(name);
 		}
 	}
 
@@ -269,7 +269,7 @@ public class DataLoadManager {
 		SwingWorker<Map, Map> worker = new SwingWorker<Map, Map>() {
 			@Override
 			protected Map doInBackground() throws Exception {
-				loadDbfileToHunter(null);
+				//loadDbfileToHunter(null);
 				loadConfigToHunter(null);
 				return null;
 			}
